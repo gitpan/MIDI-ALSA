@@ -10,7 +10,7 @@
 use MIDI::ALSA qw(:ALL);
 # use Class::MakeMethods::Utility::Ref qw( ref_clone ref_compare );
 use Data::Dumper;
-use Test::Simple tests => 36;
+use Test::Simple tests => 38;
 
 my @virmidi = virmidi_clients_and_files();
 if (@virmidi < 4) {
@@ -20,8 +20,8 @@ if (@virmidi < 4) {
 $rc = MIDI::ALSA::inputpending();
 ok(! defined $rc, "inputpending() with no client returned undef");
 
-$rc = MIDI::ALSA::client('test_a.lua',2,2,1);
-ok($rc, "client('test_a.lua',2,2,1)");
+$rc = MIDI::ALSA::client('test.pl',2,2,1);
+ok($rc, "client('test.pl',2,2,1)");
 
 if (@virmidi >= 2 ) {
 	$rc = MIDI::ALSA::connectfrom(1,$virmidi[0],0);
@@ -174,6 +174,7 @@ if (@virmidi < 4) {
 }
 
 if (@virmidi <2) {
+	ok(1, "skipping disconnectfrom()");
 	ok(1, 'skipping SND_SEQ_EVENT_PORT_UNSUBSCRIBED event');
 } else {
 	print("# running  aconnect -d $virmidi[0] $id:1 ...\n");
@@ -184,6 +185,9 @@ if (@virmidi <2) {
 	 'SND_SEQ_EVENT_PORT_UNSUBSCRIBED event received');
 }
 
+$rc = MIDI::ALSA::disconnectto(2,$virmidi[2],0);
+ok($rc, "disconnectto(2,$virmidi[2],0)");
+
 $rc = MIDI::ALSA::connectto(2,$id,1);
 ok($rc, "connectto(2,$id,1) connected to myself");
 @correct = (11, 1, 0, 1, 2.5, [$id,2], [$id,1], [0, 0, 0, 0, 0, 99] );
@@ -193,6 +197,9 @@ $latency = int(0.5 + 1000 * ($alsaevent[4]-$correct[4]));
 $alsaevent[4] = $correct[4];
 ok(Dumper(@alsaevent) eq Dumper(@correct), "received an event from myself");
 ok($latency < 20, "latency was $latency ms");
+
+$rc = MIDI::ALSA::disconnectfrom(1,$id,2);
+ok($rc, "disconnectfrom(1,$id,2)");
 
 $rc = MIDI::ALSA::stop();
 ok($rc,'stop() returns success');

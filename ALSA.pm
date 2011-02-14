@@ -9,25 +9,29 @@
 
 package MIDI::ALSA;
 no strict;
-$VERSION = '1.01';
+$VERSION = '1.02';
+# 20110213 1.02 add disconnectto and disconnectfrom
+# 20110211 1.01 first released version
+
 # gives a -w warning, but I'm afraid $VERSION .= ''; would confuse CPAN
 # use DynaLoader 'DYNALOADER';
 require Exporter;
 require DynaLoader;
 @ISA = qw(Exporter DynaLoader);
-@EXPORT = qw();
+@EXPORT = ();
 @EXPORT_OK = qw(client connectfrom connectto fd id
  input inputpending output start status stop syncoutput
  noteevent noteonevent noteoffevent pgmchangeevent pitchbendevent chanpress 
  alsa2opusevent alsa2scoreevent scoreevent2alsa rawevent2alsa);
-%EXPORT_TAGS = (ALL => [@EXPORT,@EXPORT_OK]);
+@EXPORT_CONSTS = ();
+%EXPORT_TAGS = (ALL => [@EXPORT,@EXPORT_OK], CONSTS => [@EXPORT_CONSTS]);
 bootstrap MIDI::ALSA $VERSION;
 
 my $maximum_nports = 4;
 #------------- public constants from alsa/asoundlib.h  -------------
 my %k2v = &xs_constname2value();
 while (my ($k,$v) = each %k2v) {
-	push @EXPORT_OK, $k;
+	push @EXPORT_OK, $k;  push @EXPORT_CONSTS, $k;
 	# eval "sub $k() { return $v;}";   # subroutines
 	# if ($@) { die "can't eval 'sub $k() { return $v;}': $@\n"; }
 	# eval "\$$k = $v;";               # simple variables
@@ -123,6 +127,12 @@ sub connectfrom { my ($myport, $src_lient, $src_port) = @_;
 }
 sub connectto { my ($myport, $dest_lient, $dest_port) = @_;
     return &xs_connectto($myport, $dest_lient, $dest_port);
+}
+sub disconnectfrom { my ($myport, $src_lient, $src_port) = @_;
+    return &xs_disconnectfrom($myport, $src_lient, $src_port);
+}
+sub disconnectto { my ($myport, $dest_lient, $dest_port) = @_;
+    return &xs_disconnectto($myport, $dest_lient, $dest_port);
 }
 sub fd {
     return &xs_fd();
@@ -333,6 +343,7 @@ the event format used in Sean Burke's MIDI-Perl module.
 Nothing is exported by default,
 but all the functions and constants can be exported, e.g.:
  use MIDI::ALSA(client, connectfrom, connectto, id, input, output);
+ use MIDI::ALSA(':CONSTS');
 
 The event-type constants, beginning with SND_SEQ_,
 are available not as scalars, but as module subroutines with empty prototypes.
@@ -354,56 +365,68 @@ alsa2opusevent(), alsa2scoreevent(), scoreevent2alsa(), rawevent2alsa()
 
 =over 3
 
-=item I<client>(name, ninputports, noutputports, createqueue)
+=item client($name, $ninputports, $noutputports, $createqueue)
 
 Create an ALSA sequencer client with zero or more input or output ports,
 and optionally a timing queue.  ninputports and noutputports are created
 if the quantity requested is between 1 and 4 for each.
-If createqueue = true, it creates a queue for stamping the arrival time of
-incoming events and scheduling future start times of outgoing events.
+If I<createqueue> = true, it creates a queue for stamping the arrival time
+of incoming events and scheduling future start times of outgoing events.
 
 Unlike in the I<alsaseq.py> Python module, it returns success or failure.
 
-=item I<connectfrom>( inputport, src_client, src_port )
+=item connectfrom( $inputport, $src_client, $src_port )
 
-Connect from src_client:src_port to inputport. Each input port can connect
-from more than one client. The input() function will receive events
+Connect from I<src_client:src_port> to I<inputport>. Each input port can
+connect from more than one client. The I<input()> function will receive events
 from any intput port and any of the clients connected to each of them.
 Events from each client can be distinguised by their source field.
 
 Unlike in the I<alsaseq.py> Python module, it returns success or failure.
 
-=item I<connectto>( outputport, dest_client, dest_port )
+=item connectto( $outputport, $dest_client, $dest_port )
 
-Connect outputport to dest_client:dest_port. Each outputport can be
+Connect outputport to I<dest_client:dest_port>. Each output port can be
 Connected to more than one client. Events sent to an output port using
-the output()  funtion will be sent to all clients that are connected to
+the I<output>()  funtion will be sent to all clients that are connected to
 it using this function.
 
 Unlike in the I<alsaseq.py> Python module, it returns success or failure.
 
-=item I<fd>()
+=item disconnectfrom( $inputport, $src_client, $src_port )
+
+Disconnect the connection
+from the remote I<src_client:src_port> to my I<inputport>.
+Returns success or failure.
+
+=item disconnectto( $outputport, $dest_client, $dest_port )
+
+Disconnect the connection
+from my I<outputport> to the remote I<dest_client:dest_port>.
+Returns success or failure.
+
+=item fd()
 
 Return fileno of sequencer.
 
-=item I<id>()
+=item id()
 
 Return the client number, or 0 if the client is not yet created.
 
-=item I<input>()
+=item input()
 
 Wait for an ALSA event in any of the input ports and return it.
 ALSA events are returned as an array with 8 elements:
 
- {type, flags, tag, queue, time, source, destination, data}
+ ($type, $flags, $tag, $queue, $time, \@source, \@destination, \@data)
 
 Unlike in the I<alsaseq.py> Python module,
 the time element is in floating-point seconds.
 The last three elements are also arrays:
 
- source = { src_client,  src_port }
- destination = { dest_client,  dest_port }
- data = { varies depending on type }
+ @source = ( $src_client,  $src_port )
+ @destination = ( $dest_client,  $dest_port )
+ @data = ( varies depending on type )
 
 The I<source> and I<destination> arrays may be useful within an application
 for handling events differently according to their source or destination.
@@ -419,14 +442,14 @@ then the remote client and port do not seem to be correct...
 The data array is documented in
 http://alsa-project.org/alsa-doc/alsa-lib/seq.html
 
-=item I<inputpending>()
+=item inputpending()
 
 Return the number of bytes available in input buffer.
 Use before input()  to wait till an event is ready to be read. 
 If a connection terminates, then inputpending() returns,
 and the next event will be of type SND_SEQ_EVENT_PORT_UNSUBSCRIBED
 
-=item I<output>( {type, flags, tag, queue, time, source, destination, data} )
+=item output($type,$flags,$tag,$queue,$time,\@source,\@destination,\@data)
 
 Send an ALSA-event-array to an output port.
 The format of the event is dicussed in input() above.
@@ -438,88 +461,88 @@ and otherwise it will be queued and scheduled.
 If only one port exists, all events are sent to that port. If two or
 more output ports exist, the I<dest_port> of the event determines
 which to use.
-The smallest available port-number ( as created by client() )
+The smallest available port-number ( as created by I<client>() )
 will be used if I<dest_port> is less than it,
 and the largest available port-number
 will be used if I<dest_port> is greater than it.
 
 An event sent to an output port will be sent to all clients
-that were subscribed using the connectto() function.
+that were subscribed using the I<connectto>() function.
 
-If the queue buffer is full, output() will wait
+If the queue buffer is full, I<output>() will wait
 until space is available to output the event.
-Use status() to know how many events are scheduled in the queue.
+Use I<status>() to know how many events are scheduled in the queue.
 
-=item I<start>(queue)
+=item start(queue)
 
 Start the queue. It is ignored if the client does not have a queue. 
 
-=item I<status>(queue)
+=item status(queue)
 
-Return { status, time, events } of the queue.
+Return ($status,$time,$events ) of the queue.
 
  Status: 0 if stopped, 1 if running.
  Time: current time in seconds.
  Events: number of output events scheduled in the queue.
 
-If the client does not have a queue the value {0,0,0} is returned.
+If the client does not have a queue then (0,0,0) is returned.
 Unlike in the I<alsaseq.py> Python module,
 the I<time> element is in floating-point seconds.
 
-=item I<stop>(queue)
+=item stop(queue)
 
 Stop the queue. It is ignored if the client does not have a queue. 
 
-=item I<syncoutput>(queue)
+=item syncoutput(queue)
 
 Wait until output events are processed.
 
-=item I<noteevent>( ch, key, vel, start, duration )
+=item noteevent( $ch, $key, $vel, $start, $duration )
 
-Returns an ALSA-event-array, to be scheduled by output().
+Returns an ALSA-event-array, to be scheduled by I<output>().
 Unlike in the I<alsaseq.py> Python module,
 the I<start> and I<duration> elements are in floating-point seconds.
 
-=item I<noteonevent>( ch, key, vel )
+=item noteonevent( $ch, $key, $vel )
 
-Returns an ALSA-event-array to be sent directly with output().
+Returns an ALSA-event-array to be sent directly with I<output>().
 
-=item I<noteoffevent>( ch, key, vel )
+=item noteoffevent( $ch, $key, $vel )
 
-Returns an ALSA-event-array to be sent directly with output().
+Returns an ALSA-event-array to be sent directly with I<output>().
 
-=item I<pgmchangeevent>( ch, value, start )
+=item pgmchangeevent( $ch, $value, $start )
 
-Returns an ALSA-event-array to be sent by output().
+Returns an ALSA-event-array to be sent by I<output>().
 If I<start> is not used, the event will be sent directly;
 if I<start> is provided, the event will be scheduled in a queue. 
 Unlike in the I<alsaseq.py> Python module,
 the I<start> element, when provided, is in floating-point seconds.
 
-=item I<pitchbendevent>( ch, value, start )
+=item pitchbendevent( $ch, $value, $start )
 
-Returns an ALSA-event-array to be sent by output().
+Returns an ALSA-event-array to be sent by I<output>().
 If I<start> is not used, the event will be sent directly;
 if I<start> is provided, the event will be scheduled in a queue. 
 Unlike in the I<alsaseq.py> Python module,
 the I<start> element, when provided, is in floating-point seconds.
 
-=item I<chanpress>( ch, value, start )
+=item chanpress( $ch, $value, $start )
 
-Returns an ALSA-event-array to be sent by output().
+Returns an ALSA-event-array to be sent by I<output>().
 If I<start> is not used, the event will be sent directly;
 if I<start> is provided, the event will be scheduled in a queue. 
 Unlike in the I<alsaseq.py> Python module,
 the I<start> element, when provided, is in floating-point seconds.
 
-=item I<alsa2opusevent>(alsaevent)
+=item alsa2opusevent( @alsaevent )
 
 Returns an event in the millisecond-tick score-format
 used by the I<MIDI.lua> and I<MIDI.py> modules,
 based on the opus-format in Sean Burke's MIDI-Perl CPAN module. See:
  http://www.pjb.com.au/comp/lua/MIDI.html#events
 
-=item I<alsa2scoreevent>(alsaevent)
+=item alsa2scoreevent( @alsaevent )
 
 Returns an event in the millisecond-tick score-format
 used by the I<MIDI.lua> and I<MIDI.py> modules,
@@ -531,18 +554,18 @@ it will return I<nil> when called with the I<note_on> event;
 the calling loop must therefore detect I<nil>
 and not, for example, try to index it.
 
-=item I<scoreevent2alsa>(event)
+=item scoreevent2alsa( @event )
 
-Returns an ALSA-event-array to be scheduled in a queue by output().
+Returns an ALSA-event-array to be scheduled in a queue by I<output>().
 The input is an event in the millisecond-tick score-format
 used by the I<MIDI.lua> and I<MIDI.py> modules,
 based on the score-format in Sean Burke's MIDI-Perl CPAN module. See:
  http://www.pjb.com.au/comp/lua/MIDI.html#events
 
 For example:
- ALSA.output(ALSA.scoreevent2alsa{'note',4000,1000,0,62,110})
+ output(scoreevent2alsa('note',4000,1000,0,62,110))
 
-=item I<rawevent2alsa>()
+=item rawevent2alsa()
 
 Unimplemented
 
@@ -560,13 +583,9 @@ so you should be able to install it with the command:
 
 =head1 TO DO
 
-Certainly there should be a way of checking the current status
-of a connection,
-like is_still_connectedto() and is_still_connectedfrom()
-or something, so that if a connection has vanished the application
-can handle it gracefully.
-
-Probably there should be disconnectto() and disconnectfrom()
+Certainly there should be a way of checking the current status of a connection,
+like isconnectedto() and isconnectedfrom() or something,
+so that if a connection has vanished the application can handle it gracefully.
 
 Perhaps there should be a general connect_between() mechanism,
 allowing the interconnection of two other clients,
@@ -582,6 +601,8 @@ which makes it hard to know which client has disconnected.
 
 output() and input() seem to filter out all non-sounding events,
 like text_events and sysex; this ought to be adjustable.
+ int snd_seq_set_client_event_filter (snd_seq_t * seq, int event_type)   
+
 
 =head1 AUTHOR
 

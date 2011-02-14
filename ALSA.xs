@@ -123,6 +123,43 @@ CODE:
 }
 
 int
+xs_disconnectfrom (myport, src_client, src_port)
+	int myport
+	int src_client
+	int src_port
+CODE:
+{
+	dMY_CXT;
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
+    /* Modify dest port if out of bounds 1.01 */
+    if (myport >= MY_CXT.firstoutputport) myport = MY_CXT.firstoutputport-1;
+	int rc = snd_seq_disconnect_from(MY_CXT.seq_handle,myport,src_client,src_port);
+	/* returns 0 on success, or a negative error code */
+	/* http://alsa-project.org/alsa-doc/alsa-lib/seq.html */
+	ST(0) = sv_2mortal(newSVnv(rc==0));
+	XSRETURN(1);
+}
+
+int
+xs_disconnectto (myport, dest_client, dest_port)
+	int myport
+	int dest_client
+	int dest_port
+CODE:
+{
+	dMY_CXT;
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
+    /* Modify source port if out of bounds 1.01 */
+    if ( myport < MY_CXT.firstoutputport ) myport= MY_CXT.firstoutputport;
+    else if ( myport > MY_CXT.lastoutputport ) myport = MY_CXT.lastoutputport;
+	int rc = snd_seq_disconnect_to(MY_CXT.seq_handle,myport,dest_client,dest_port);
+	/* returns 0 on success, or a negative error code */
+	/* http://alsa-project.org/alsa-doc/alsa-lib/seq.html */
+	ST(0) = sv_2mortal(newSVnv(rc==0));
+	XSRETURN(1);
+}
+
+int
 xs_fd ()
 CODE:
 {

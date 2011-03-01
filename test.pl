@@ -10,11 +10,11 @@
 use MIDI::ALSA qw(:ALL);
 # use Class::MakeMethods::Utility::Ref qw( ref_clone ref_compare );
 use Data::Dumper;
-use Test::Simple tests => 38;
+use Test::Simple tests => 42;
 
 my @virmidi = virmidi_clients_and_files();
 if (@virmidi < 4) {
-	print("# To run all tests, two virmidi clients are needed...\n");
+	print("# To run all tests, four virmidi clients are needed...\n");
 }
 
 $rc = MIDI::ALSA::inputpending();
@@ -52,6 +52,12 @@ ok($fd > 0, 'fd()');
 $id = MIDI::ALSA::id();
 ok($id > 0, "id() returns $id");
 
+my %num2name = MIDI::ALSA::listclients();
+ok($num2name{$id} eq 'test.pl', "listclients()");
+
+my %num2nports = MIDI::ALSA::listnumports();
+ok($num2nports{$id} == 4, "listnumports()");
+
 if (@virmidi < 2) {
 	ok(1, "skipping inputpending() returns $rc");
 	ok(1, 'skipping input() test');
@@ -62,6 +68,8 @@ if (@virmidi < 2) {
 	ok(1, 'skipping alsa2opusevent() test');
 	ok(1, 'skipping input() test');
 	ok(1, 'skipping alsa2opusevent() test');
+	ok(1, 'skipping listconnectedto() test');
+	ok(1, 'skipping listconnectedfrom() test');
 } else {
 	open(my $inp, '>', $virmidi[1])
 	 || die "can't open $virmidi[1]: $!\n";  # client 24
@@ -135,6 +143,17 @@ if (@virmidi < 2) {
 	@correct = ('note_off',300000,0,60,101);
 	ok(Dumper(@opusevent) eq Dumper(@correct),
 	 'alsa2opusevent() returns ("note_off",300000,0,60,101)');
+
+	my @to = MIDI::ALSA::listconnectedto();
+	@correct = ([2,0+$virmidi[2],0],);
+	#print "to=",Dumper(@to),"correct=",Dumper(@correct);
+	ok(Dumper(@to) eq Dumper(@correct),
+	 "listconnectedto() returns ([2,$virmidi[2],0])");
+	my @from = MIDI::ALSA::listconnectedfrom();
+	@correct = ([1,0+$virmidi[0],0],);
+	#print "from=",Dumper(@from),"correct=",Dumper(@correct);
+	ok(Dumper(@from) eq Dumper(@correct),
+	 "listconnectedfrom() returns ([1,$virmidi[0],0])");
 }
 
 if (@virmidi < 4) {

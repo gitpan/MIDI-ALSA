@@ -9,7 +9,7 @@
 
 package MIDI::ALSA;
 no strict;
-$VERSION = '1.02';
+$VERSION = '1.03';
 # 20110213 1.02 add disconnectto and disconnectfrom
 # 20110211 1.01 first released version
 
@@ -122,17 +122,29 @@ sub input {
 sub inputpending {
     return &xs_inputpending();
 }
-sub connectfrom { my ($myport, $src_lient, $src_port) = @_;
-    return &xs_connectfrom($myport, $src_lient, $src_port);
+sub connectfrom { my ($myport, $src_client, $src_port) = @_;
+	if (!defined $src_port and $src_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
+		$src_client = 0+$1; $src_port = 0+$2;
+	}
+    return &xs_connectfrom($myport, $src_client, $src_port);
 }
-sub connectto { my ($myport, $dest_lient, $dest_port) = @_;
-    return &xs_connectto($myport, $dest_lient, $dest_port);
+sub connectto { my ($myport, $dest_client, $dest_port) = @_;
+	if (!defined $dest_port and $dest_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
+		$dest_client = 0+$1; $dest_port = 0+$2;
+	}
+    return &xs_connectto($myport, $dest_client, $dest_port);
 }
-sub disconnectfrom { my ($myport, $src_lient, $src_port) = @_;
-    return &xs_disconnectfrom($myport, $src_lient, $src_port);
+sub disconnectfrom { my ($myport, $src_client, $src_port) = @_;
+	if (!defined $src_port and $src_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
+		$src_client = 0+$1; $src_port = 0+$2;
+	}
+    return &xs_disconnectfrom($myport, $src_client, $src_port);
 }
-sub disconnectto { my ($myport, $dest_lient, $dest_port) = @_;
-    return &xs_disconnectto($myport, $dest_lient, $dest_port);
+sub disconnectto { my ($myport, $dest_client, $dest_port) = @_;
+	if (!defined $dest_port and $dest_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
+		$dest_client = 0+$1; $dest_port = 0+$2;
+	}
+    return &xs_disconnectto($myport, $dest_client, $dest_port);
 }
 sub fd {
     return &xs_fd();
@@ -307,6 +319,36 @@ sub scoreevent2alsa { my @event = @_;
 sub rawevent2alsa {
 }
 
+# 1.03
+sub listclients {
+	return &xs_listclients(0);
+}
+sub listnumports { # returns (14->2,20->1,128->4)
+	return &xs_listclients(1);
+}
+sub listconnectedto { # returns ([0,14,1], [1,20,0])
+	my @flat = &xs_listconnections(0);
+	my @lol  = (); my $ifl = $[; my $ilol = $[;
+	while ($ifl < $#flat) {
+		push @{$lol[$ilol]}, 0+$flat[$ifl];  $ifl += 1;
+		push @{$lol[$ilol]}, 0+$flat[$ifl];  $ifl += 1;
+		push @{$lol[$ilol]}, 0+$flat[$ifl];  $ifl += 1;
+		$ilol += 1;
+	}
+	return @lol;
+}
+sub listconnectedfrom { # returns ([1,32,0], [0,36,0])
+	my @flat = &xs_listconnections(1);
+	my @lol  = (); my $ifl = $[; my $ilol = $[;
+	while ($ifl < $#flat) {
+		push @{$lol[$ilol]}, 0+$flat[$ifl];  $ifl += 1;
+		push @{$lol[$ilol]}, 0+$flat[$ifl];  $ifl += 1;
+		push @{$lol[$ilol]}, 0+$flat[$ifl];  $ifl += 1;
+		$ilol += 1;
+	}
+	return @lol;
+}
+
 1;
 
 __END__
@@ -353,8 +395,8 @@ They must therefore be used without a dollar-sign e.g.:
 =head1 FUNCTIONS
 
 Functions based on those in I<alsaseq.py>:
-client(), connectfrom(), connectto(), fd(), id(), input(), inputpending(),
-output(), start(), status(), stop(), syncoutput()
+client(), connectfrom(), connectto(), disconnectfrom(), disconnectto(), fd(),
+id(), input(), inputpending(), output(), start(), status(), stop(), syncoutput()
 
 Functions based on those in I<alsamidi.py>:
 noteevent(), noteonevent(), noteoffevent(), pgmchangeevent(),
@@ -362,6 +404,9 @@ pitchbendevent(), chanpress()
 
 Functions to interface with I<MIDI-Perl>:
 alsa2opusevent(), alsa2scoreevent(), scoreevent2alsa(), rawevent2alsa()
+
+Functions to get the current ALSA status:
+listclients(), listnumports(), listconnectedto(), listconnectedfrom()
 
 =over 3
 
@@ -569,6 +614,34 @@ For example:
 
 Unimplemented
 
+=item listclients()
+
+Returns a hash of the numbers and descriptive strings of all ALSA clients:
+
+ my %clientnumber2clientname = MIDI::ALSA::listclients();
+ my %clientname2clientnumber = reverse %clientnumber2clientname;
+
+=item listnumports()
+
+Returns a hash of the client-numbers and how many ports they are running,
+so if a client is running 4 ports they will be numbered 0..3
+
+ my %clientnumber2howmanyports = MIDI::ALSA::listnumports();
+
+=item listconnectedto()
+
+Returns a list of arrayrefs, each to a three-element array
+( $outputport, $dest_client, $dest_port )
+exactly as might have been passed to connectto(),
+or which could be passed to disconnectto().
+
+=item listconnectedfrom()
+
+Returns a list of arrayrefs, each to a three-element array
+( $inputport, $src_client, $src_port )
+exactly as might have been passed to connectfrom(),
+or which could be passed to disconnectfrom().
+
 =back
 
 =head1 DOWNLOAD
@@ -583,26 +656,17 @@ so you should be able to install it with the command:
 
 =head1 TO DO
 
-Certainly there should be a way of checking the current status of a connection,
-like isconnectedto() and isconnectedfrom() or something,
-so that if a connection has vanished the application can handle it gracefully.
-
 Perhaps there should be a general connect_between() mechanism,
 allowing the interconnection of two other clients,
 a bit like I<aconnect 32 20>
 
-There should be a way of getting the textual information
-about the various clients, like "TiMidity" or
-"Roland XV-2020" or "Virtual Raw MIDI 2-0" and so on.
-
 If an event is of type SND_SEQ_EVENT_PORT_UNSUBSCRIBED
 then the remote client and port seem to be zeroed-out,
-which makes it hard to know which client has disconnected.
+which makes it hard to know which client has just disconnected.
 
-output() and input() seem to filter out all non-sounding events,
-like text_events and sysex; this ought to be adjustable.
- int snd_seq_set_client_event_filter (snd_seq_t * seq, int event_type)   
-
+ALSA does not transmit Meta-Events like I<text_event>, which is sad,
+but there's not much can be done about it.
+Worse: output() and input() do not handle sysex events, which they should.
 
 =head1 AUTHOR
 
@@ -622,6 +686,8 @@ Peter J Billam, http://www.pjb.com.au/comp/contact.html
  http://alsa-project.org/alsa-doc/alsa-lib/structsnd__seq__ev__ctrl.html
  http://alsa-project.org/alsa-doc/alsa-lib/structsnd__seq__ev__queue__control.html
  http://alsa-project.org/alsa-doc/alsa-lib/group___seq_client.html
+ http://alsa-utils.sourcearchive.com/documentation/1.0.20/aconnect_8c-source.html 
+ http://alsa-utils.sourcearchive.com/documentation/1.0.8/aplaymidi_8c-source.html
  snd_seq_client_info_event_filter_clear
  snd_seq_get_any_client_info
  snd_seq_get_client_info

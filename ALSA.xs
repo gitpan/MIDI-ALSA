@@ -11,6 +11,29 @@ extern "C" {
 
 /* Global Data */
 #define MY_CXT_KEY "MIDI::EVAL::_guts" XS_VERSION
+/* stuff for version 1.03 - see aconnect.c */
+#define LIST_INPUT  1
+#define LIST_OUTPUT 2
+#define perm_ok(pinfo,bits) ((snd_seq_port_info_get_capability(pinfo) & (bits)) == (bits))
+static int check_permission(snd_seq_port_info_t *pinfo, int perm) {
+	if (perm) {
+		if (perm & LIST_INPUT) {
+			if (perm_ok(pinfo,
+			 SND_SEQ_PORT_CAP_READ|SND_SEQ_PORT_CAP_SUBS_READ))
+				goto __ok;
+		}
+		if (perm & LIST_OUTPUT) {
+			if (perm_ok(pinfo,
+			 SND_SEQ_PORT_CAP_WRITE|SND_SEQ_PORT_CAP_SUBS_WRITE))
+				goto __ok;
+		}
+		return 0;
+	}
+ __ok:
+	if (snd_seq_port_info_get_capability(pinfo) & SND_SEQ_PORT_CAP_NO_EXPORT)
+		return 0;
+	return 1;
+}
 
 typedef struct {
 	snd_seq_t *seq_handle;
@@ -276,8 +299,6 @@ xs_output (type, flags, tag, queue, t, src_client, src_port, dest_client, dest_p
 CODE:
 {
 	dMY_CXT;
-    /* Lua stack: type, flags, tag, queue, time (float, in secs),
-     src_client, src_port, dest_client, dest_port, data... */
     snd_seq_event_t ev;
     ev.type          = type;
     ev.flags         = flags;
@@ -291,7 +312,6 @@ CODE:
     ev.dest.port     = dest_port;
     static int * data;
         
-    /* printf ( "event.type: %d source.client=%d dest.client=%d\n", ev.type, ev.source.client, ev.dest.client ); */
     switch( ev.type ) {
         case SND_SEQ_EVENT_NOTE:
         case SND_SEQ_EVENT_NOTEON:
@@ -302,7 +322,6 @@ CODE:
             ev.data.note.velocity     = data3;
             ev.data.note.off_velocity = data4;
             ev.data.note.duration     = data5;
-            /* printf ( "note=%d velocity=%d\n", ev.data.note.note, ev.data.note.velocity ); */
             break;
 
         case SND_SEQ_EVENT_CONTROLLER:
@@ -319,6 +338,10 @@ CODE:
                printf ( "value: %d\n", ev.data.control.value );
             */
             break;
+
+		case SND_SEQ_EVENT_SYSEX: /* the calling args will need a string */
+			/* snd_seq_ev_set_variable ( ev, datalen, dataptr ) */
+			break;
     }
     /* If not a direct event, use the queue */
     if ( ev.queue != SND_SEQ_QUEUE_DIRECT )
@@ -328,7 +351,6 @@ CODE:
         snd_seq_ev_set_source(&ev, MY_CXT.firstoutputport );
     else if ( ev.source.port > MY_CXT.lastoutputport )
         snd_seq_ev_set_source(&ev, MY_CXT.lastoutputport );
-    /* printf ( "event.queue: %d source.port=%d dest.port=%d\n", ev.queue, ev.source.port, ev.dest.port ); */
     /* Use subscribed ports, except if ECHO event */
     if ( ev.type != SND_SEQ_EVENT_ECHO ) snd_seq_ev_set_subs(&ev);
     int rc = snd_seq_event_output_direct( MY_CXT.seq_handle, &ev );
@@ -363,6 +385,90 @@ CODE:
 	int rc = snd_seq_stop_queue(MY_CXT.seq_handle, MY_CXT.queue_id, NULL);
 	ST(0) = sv_2mortal(newSVnv(rc));
 	XSRETURN(1);
+}
+
+int
+xs_listclients (getnumports)
+	int getnumports;
+CODE:
+{
+	/* stuff for version 1.03 - see aconnect.c
+	alsa-utils.sourcearchive.com/documentation/1.0.20/aconnect_8c-source.html 
+	*/
+	dMY_CXT;
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
+	snd_seq_client_info_t *cinfo;
+	snd_seq_port_info_t *pinfo;
+	snd_seq_client_info_alloca(&cinfo);
+	snd_seq_port_info_alloca(&pinfo);
+	snd_seq_client_info_set_client(cinfo, -1);
+	unsigned int iST = 0;
+	while (snd_seq_query_next_client(MY_CXT.seq_handle, cinfo) >= 0) {
+		/* reset query info */
+		snd_seq_port_info_set_client(pinfo,
+		 snd_seq_client_info_get_client(cinfo));
+		snd_seq_port_info_set_port(pinfo, -1);
+ 		ST(iST) = sv_2mortal(newSVnv(snd_seq_client_info_get_client(cinfo)));
+		iST++;
+		if (getnumports == 1) {
+ 			ST(iST) = sv_2mortal(newSVnv(
+			  snd_seq_client_info_get_num_ports(cinfo)));
+		} else {
+	 		ST(iST) = sv_2mortal(newSVpv(snd_seq_client_info_get_name(cinfo),
+			 strlen(snd_seq_client_info_get_name(cinfo))));
+		}
+		iST++;
+	}
+	XSRETURN(iST);
+}
+
+int
+xs_listconnections (from)
+	int from;
+CODE:
+{
+	/* stuff for version 1.03 - see aconnect.c
+	alsa-utils.sourcearchive.com/documentation/1.0.20/aconnect_8c-source.html 
+	*/
+	dMY_CXT;
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
+	snd_seq_client_info_t *cinfo;
+	snd_seq_port_info_t *pinfo;
+    snd_seq_query_subscribe_t *subs;
+	snd_seq_client_info_alloca(&cinfo);
+	snd_seq_port_info_alloca(&pinfo);
+    snd_seq_query_subscribe_alloca(&subs);
+	snd_seq_get_client_info(MY_CXT.seq_handle, cinfo);
+	unsigned int iST = 0;
+    /* reset query info */
+    snd_seq_query_subscribe_set_type(subs,
+	  from ? SND_SEQ_QUERY_SUBS_WRITE : SND_SEQ_QUERY_SUBS_READ);
+    snd_seq_port_info_set_client(pinfo,
+      snd_seq_client_info_get_client(cinfo));
+    snd_seq_port_info_set_port(pinfo, -1);
+    while (snd_seq_query_next_port(MY_CXT.seq_handle, pinfo) >= 0) {
+    	snd_seq_query_subscribe_set_root(subs,
+		  snd_seq_port_info_get_addr(pinfo));
+    	snd_seq_query_subscribe_set_port(subs,
+		  snd_seq_port_info_get_addr(pinfo)->port);
+    	snd_seq_query_subscribe_set_index(subs, 0);
+		/* At least, the client id, the port id, the index number
+		 and the query type must be set to perform a proper query. */
+    	while (snd_seq_query_port_subscribers(MY_CXT.seq_handle, subs) >= 0) {
+        	const snd_seq_addr_t *addr;
+        	addr = snd_seq_query_subscribe_get_addr(subs);
+			ST(iST)
+			  = sv_2mortal(newSVnv(snd_seq_port_info_get_addr(pinfo)->port));
+			iST++;
+			ST(iST) = sv_2mortal(newSVnv(addr->client));
+			iST++;
+			ST(iST) = sv_2mortal(newSVnv(addr->port));
+			iST++;
+        	snd_seq_query_subscribe_set_index(subs,
+         	  snd_seq_query_subscribe_get_index(subs) + 1);
+		}
+    }
+	XSRETURN(iST);
 }
 
 int
@@ -438,13 +544,13 @@ CODE:
 		{"SND_SEQ_TIME_STAMP_REAL", SND_SEQ_TIME_STAMP_REAL},
 		{NULL, 0}
 	};
-    int index;  /* define constants in module namespace */
+	int index;  /* define constants in module namespace */
 	int i = 0;  /* index into name,value array */
-    for (index = 0; constants[index].name != NULL; ++index) {
-        ST(i) = sv_2mortal(newSVpv(constants[index].name, 0));
+	for (index = 0; constants[index].name != NULL; ++index) {
+		ST(i) = sv_2mortal(newSVpv(constants[index].name, 0));
 		i++;
-        ST(i) = sv_2mortal(newSViv(constants[index].value));
+		ST(i) = sv_2mortal(newSViv(constants[index].value));
 		i++;
-    }
+	}
 	XSRETURN(i);
 }

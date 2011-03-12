@@ -10,7 +10,7 @@
 use MIDI::ALSA qw(:ALL);
 # use Class::MakeMethods::Utility::Ref qw( ref_clone ref_compare );
 use Data::Dumper;
-use Test::Simple tests => 42;
+use Test::Simple tests => 50;
 
 my @virmidi = virmidi_clients_and_files();
 if (@virmidi < 4) {
@@ -65,9 +65,9 @@ if (@virmidi < 2) {
 	ok(1, 'skipping input() test');
 	ok(1, 'skipping alsa2scoreevent() test');
 	ok(1, 'skipping input() test');
-	ok(1, 'skipping alsa2opusevent() test');
+	ok(1, 'skipping alsa2scoreevent() test');
 	ok(1, 'skipping input() test');
-	ok(1, 'skipping alsa2opusevent() test');
+	ok(1, 'skipping alsa2scoreevent() test');
 	ok(1, 'skipping listconnectedto() test');
 	ok(1, 'skipping listconnectedfrom() test');
 } else {
@@ -120,29 +120,47 @@ if (@virmidi < 2) {
 	# print "correct  =".Dumper(@correct);
 	ok(Dumper(@alsaevent) eq Dumper(@correct),
 	 'input() returns (6,1,0,1,300,[24,0],[id,1],[0,60,101,0,0])');
-	@opusevent = MIDI::ALSA::alsa2opusevent(@alsaevent);
-	$opusevent[1] = 300000;
-	@correct = ('note_on',300000,0,60,101);
-	ok(Dumper(@opusevent) eq Dumper(@correct),
-	 'alsa2opusevent() returns ("note_on",300000,0,60,101)');
+	@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
+	#$scoreevent[1] = 300000;
+	#@correct = ('note_on',300000,0,60,101);
+	#ok(Dumper(@scoreevent) eq Dumper(@correct),
+	# 'alsa2scoreevent() returns ("note_on",300000,0,60,101)');
 
 	print("# feeding ourselves a note_off event...\n");
 	print $inp "\x80\x3C\x65"; # (8*16, 60,101); # {'note_off',0,60,101}
 	$rc =  MIDI::ALSA::inputpending();
 	@alsaevent  = MIDI::ALSA::input();
 	$save_time = $alsaevent[4];
-	@correct = ( 7, 1, 0, 1, 300, [ 24, 0 ], [ 129, 1 ], [ 0, 60, 101, 0, 0 ] );
+	@correct = ( 7, 1, 0, 1, 301, [ 24,0 ], [ 129,1 ], [ 0, 60, 101, 0, 0 ] );
+	$alsaevent[4] = 301;
+	${$alsaevent[7]}[4] = 0;
+	# print('alsaevent='.Dumper(@alsaevent));
+	# print('correct='.Dumper(@correct));
+	ok(Dumper(@alsaevent) eq Dumper(@correct),
+	 'input() returns (7,1,0,1,301,[24,0],[id,1],[0,60,101,0,0])');
+	@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
+	# print('scoreevent='.Dumper(@scoreevent));
+	$scoreevent[1] = 300000;
+	@correct = ('note',300000,1000,0,60,101);
+	ok(Dumper(@scoreevent) eq Dumper(@correct),
+	 'alsa2scoreevent() returns ("note",300000,1000,0,60,101)');
+
+	print("# feeding ourselves a sysex_f0 event...\n");
+	print $inp "\xF0}hello world\xF7"; # {'sysex_f0',0,'hello world'}
+	@alsaevent  = MIDI::ALSA::input();
+	$save_time = $alsaevent[4];
+	@correct = (130, 5, 0, 1, 300, [24,0], [129,1],
+	 ["\xF0}hello world\xF7",undef,undef,undef,0] );
 	$alsaevent[4] = 300;
 	${$alsaevent[7]}[4] = 0;
 	ok(Dumper(@alsaevent) eq Dumper(@correct),
-	 'input() returns (7,1,0,1,300,[24,0],[id,1],[0,60,101,0,0])');
-	#print('alsaevent='..DataDumper($alsaevent));
-	@opusevent = MIDI::ALSA::alsa2opusevent(@alsaevent);
-	#print('opusevent='..DataDumper(opusevent));
-	$opusevent[1] = 300000;
-	@correct = ('note_off',300000,0,60,101);
-	ok(Dumper(@opusevent) eq Dumper(@correct),
-	 'alsa2opusevent() returns ("note_off",300000,0,60,101)');
+	 'input() returns (130,5,0,1,300,[24,0],[id,1],["\xF0}hello world\xF7"])');
+	#print('alsaevent='.Dumper(@alsaevent));
+	@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
+	$scoreevent[1] = 300000;
+	@correct = ('sysex_f0',300000,"}hello world\xF7");
+	ok(Dumper(@scoreevent) eq Dumper(@correct),
+	 'alsa2scoreevent() returns ("sysex_f0",300000,"}hello world\xF7")');
 
 	my @to = MIDI::ALSA::listconnectedto();
 	@correct = ([2,0+$virmidi[2],0],);
@@ -224,14 +242,14 @@ $rc = MIDI::ALSA::stop();
 ok($rc,'stop() returns success');
 
 @alsaevent = MIDI::ALSA::noteonevent(15, 72, 100, 2.7);
-@opusevent = MIDI::ALSA::alsa2opusevent(@alsaevent);
-@correct = ('note_on',0,15,72,100);
-ok(Dumper(@opusevent) eq Dumper(@correct), 'noteonevent()');
+@correct = (6,1,0,253,0,[0,0],[0,0],[15,72,100,0,0]);
+ok(Dumper(@alsaevent) eq Dumper(@correct), 'noteonevent()');
 
 @alsaevent = MIDI::ALSA::noteoffevent(15, 72, 100, 2.7);
-@opusevent = MIDI::ALSA::alsa2opusevent(@alsaevent);
-@correct = ('note_off',0,15,72,100);
-ok(Dumper(@opusevent) eq Dumper(@correct), 'noteoffevent()');
+# print('alsaevent='.Dumper(@alsaevent));
+@correct = (7,1,0,253,0,[0,0],[0,0],[15,72,100,100,0]);
+# print('correct='.Dumper(@correct));
+ok(Dumper(@alsaevent) eq Dumper(@correct), 'noteoffevent()');
 
 @alsaevent  = MIDI::ALSA::noteevent(15, 72, 100, 2.7, 3.1);
 @scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
@@ -244,9 +262,9 @@ ok(Dumper(@scoreevent) eq Dumper(@correct), 'noteevent()');
 ok(Dumper(@scoreevent) eq Dumper(@correct), 'pgmchangeevent() with time>=0');
 
 @alsaevent = MIDI::ALSA::pgmchangeevent(11, 98);
-@opusevent = MIDI::ALSA::alsa2opusevent(@alsaevent);
+@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
 @correct = ('patch_change',0,11,98);
-ok(Dumper(@opusevent) eq Dumper(@correct), 'pgmchangeevent() with time undefined');
+ok(Dumper(@scoreevent) eq Dumper(@correct), 'pgmchangeevent() with time undefined');
 
 @alsaevent = MIDI::ALSA::pitchbendevent(11, 98, 2.7);
 @scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
@@ -254,9 +272,9 @@ ok(Dumper(@opusevent) eq Dumper(@correct), 'pgmchangeevent() with time undefined
 ok(Dumper(@scoreevent) eq Dumper(@correct), 'pitchbendevent() with time>=0');
 
 @alsaevent = MIDI::ALSA::pitchbendevent(11, 98);
-@opusevent = MIDI::ALSA::alsa2opusevent(@alsaevent);
+@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
 @correct = ('pitch_wheel_change',0,11,98);
-ok(Dumper(@opusevent) eq Dumper(@correct), 'pitchbendevent() with time undefined');
+ok(Dumper(@scoreevent) eq Dumper(@correct), 'pitchbendevent() with time undefined');
 
 @alsaevent = MIDI::ALSA::chanpress(11, 98, 2.7);
 @scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
@@ -266,11 +284,54 @@ ok(Dumper(@opusevent) eq Dumper(@correct), 'pitchbendevent() with time undefined
 ok(Dumper(@scoreevent) eq Dumper(@correct), 'chanpress() with time>=0');
 
 @alsaevent = MIDI::ALSA::chanpress(11, 98);
-@opusevent = MIDI::ALSA::alsa2opusevent(@alsaevent);
+@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
 # print('alsaevent='.Dumper(@alsaevent)."\n");
-# print('opusevent='.Dumper(@opusevent)."\n");
+# print('scoreevent='.Dumper(@scoreevent)."\n");
 @correct = ('channel_after_touch',0,11,98);
-ok(Dumper(@opusevent) eq Dumper(@correct), 'chanpress() with time undefined');
+ok(Dumper(@scoreevent) eq Dumper(@correct), 'chanpress() with time undefined');
+
+@correct = ('note',0,1000,15,72,100);
+@alsaevent = MIDI::ALSA::scoreevent2alsa(@correct);
+@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
+ok(Dumper(@scoreevent) eq Dumper(@correct), 'scoreevent2alsa("note"...)');
+
+@correct = ('control_change',10,15,72,100);
+@alsaevent = MIDI::ALSA::scoreevent2alsa(@correct);
+@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
+ok(Dumper(@scoreevent) eq Dumper(@correct),
+  'scoreevent2alsa("control_change"...)');
+
+@correct = ('patch_change',10,15,72);
+@alsaevent = MIDI::ALSA::scoreevent2alsa(@correct);
+@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
+ok(Dumper(@scoreevent) eq Dumper(@correct),
+  'scoreevent2alsa("patch_change"...)');
+
+@correct = ('pitch_wheel_change',10,15,3232);
+@alsaevent = MIDI::ALSA::scoreevent2alsa(@correct);
+@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
+ok(Dumper(@scoreevent) eq Dumper(@correct),
+  'scoreevent2alsa("pitch_wheel_change"...)');
+
+@correct = ('channel_after_touch',10,15,123);
+@alsaevent = MIDI::ALSA::scoreevent2alsa(@correct);
+@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
+ok(Dumper(@scoreevent) eq Dumper(@correct),
+  'scoreevent2alsa("channel_after_touch"...)');
+
+@correct = ('sysex_f0',2,"}hello world\xF7");
+@alsaevent = MIDI::ALSA::scoreevent2alsa(@correct);
+@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
+ok(Dumper(@scoreevent) eq Dumper(@correct),
+  'scoreevent2alsa("sysex_f0"...)');
+
+@correct = ('sysex_f7',2,"that's all folks\xF7");
+@alsaevent = MIDI::ALSA::scoreevent2alsa(@correct);
+# print "alsaevent=",Dumper(@alsaevent);
+@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
+# print "scoreevent=",Dumper(@scoreevent),"correct=",Dumper(@correct);
+ok(Dumper(@scoreevent) eq Dumper(@correct),
+  'scoreevent2alsa("sysex_f7"...)');
 
 # --------------------------- infrastructure ----------------
 sub virmidi_clients_and_files {

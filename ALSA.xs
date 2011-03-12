@@ -67,16 +67,16 @@ CODE:
 		RETVAL = 0;
 	}
 	snd_seq_set_client_name(MY_CXT.seq_handle, client_name );
-
 	if ( createqueue )
 		MY_CXT.queue_id = snd_seq_alloc_queue(MY_CXT.seq_handle);
 	else
 		MY_CXT.queue_id = SND_SEQ_QUEUE_DIRECT;
 
 	for ( n=0; n < ninputports; n++ ) {
-		if ((portid = snd_seq_create_simple_port(MY_CXT.seq_handle,"Input port",
-				SND_SEQ_PORT_CAP_WRITE|SND_SEQ_PORT_CAP_SUBS_WRITE,
-				SND_SEQ_PORT_TYPE_APPLICATION)) < 0) {
+		if (( portid = snd_seq_create_simple_port(MY_CXT.seq_handle,
+			  "Input port",
+			  SND_SEQ_PORT_CAP_WRITE|SND_SEQ_PORT_CAP_SUBS_WRITE,
+			  SND_SEQ_PORT_TYPE_APPLICATION)) < 0) {
 			fprintf(stderr, "Error creating input port %d.\n", n );
 			ST(0) = sv_2mortal(newSVnv(0));
 			XSRETURN(1);
@@ -92,11 +92,11 @@ CODE:
 			snd_seq_set_port_info(MY_CXT.seq_handle, portid, pinfo);
 		}
 	}
-
 	for ( n=0; n < noutputports; n++ ) {
-		if (( portid = snd_seq_create_simple_port(MY_CXT.seq_handle, "Output port",
-				SND_SEQ_PORT_CAP_READ|SND_SEQ_PORT_CAP_SUBS_READ,
-				SND_SEQ_PORT_TYPE_APPLICATION)) < 0) {
+		if (( portid = snd_seq_create_simple_port(MY_CXT.seq_handle,
+			  "Output port",
+			  SND_SEQ_PORT_CAP_READ|SND_SEQ_PORT_CAP_SUBS_READ,
+			  SND_SEQ_PORT_TYPE_APPLICATION)) < 0) {
 			fprintf(stderr, "Error creating output port %d.\n", n );
 			ST(0) = sv_2mortal(newSVnv(0));
 			XSRETURN(1);
@@ -116,7 +116,7 @@ xs_connectfrom (myport, src_client, src_port)
 CODE:
 {
 	dMY_CXT;
-	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
     /* Modify dest port if out of bounds 1.01 */
     if (myport >= MY_CXT.firstoutputport) myport = MY_CXT.firstoutputport-1;
 	int rc = snd_seq_connect_from(MY_CXT.seq_handle,myport,src_client,src_port);
@@ -134,7 +134,7 @@ xs_connectto (myport, dest_client, dest_port)
 CODE:
 {
 	dMY_CXT;
-	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
     /* Modify source port if out of bounds 1.01 */
     if ( myport < MY_CXT.firstoutputport ) myport= MY_CXT.firstoutputport;
     else if ( myport > MY_CXT.lastoutputport ) myport = MY_CXT.lastoutputport;
@@ -153,7 +153,7 @@ xs_disconnectfrom (myport, src_client, src_port)
 CODE:
 {
 	dMY_CXT;
-	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
     /* Modify dest port if out of bounds 1.01 */
     if (myport >= MY_CXT.firstoutputport) myport = MY_CXT.firstoutputport-1;
 	int rc = snd_seq_disconnect_from(MY_CXT.seq_handle,myport,src_client,src_port);
@@ -171,7 +171,7 @@ xs_disconnectto (myport, dest_client, dest_port)
 CODE:
 {
 	dMY_CXT;
-	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
     /* Modify source port if out of bounds 1.01 */
     if ( myport < MY_CXT.firstoutputport ) myport= MY_CXT.firstoutputport;
     else if ( myport > MY_CXT.lastoutputport ) myport = MY_CXT.lastoutputport;
@@ -187,8 +187,7 @@ xs_fd ()
 CODE:
 {
 	dMY_CXT;
-	/* must test if seq_handle exists, to avoid segfault */
-	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
 	int npfd;
 	struct pollfd *pfd;
 	npfd = snd_seq_poll_descriptors_count(MY_CXT.seq_handle, POLLIN);
@@ -203,8 +202,11 @@ xs_input ()
 CODE:
 {
 	dMY_CXT;
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
 	snd_seq_event_t *ev;
-	snd_seq_event_input( MY_CXT.seq_handle, &ev );
+	int err;
+	err = snd_seq_event_input( MY_CXT.seq_handle, &ev );
+	if (err < 0) { XSRETURN(0); }  /* 1.04 survive SIGINT */
 	/* returns: (type, flags, tag, queue, time, src_client, src_port,
 	   dest_client, dest_port, data...)
 	   We flatten out the list here so as not to have to use userdata
@@ -225,7 +227,7 @@ CODE:
 		case SND_SEQ_EVENT_NOTEON:
 		case SND_SEQ_EVENT_NOTEOFF:
 		case SND_SEQ_EVENT_KEYPRESS:
-			ST(9) = sv_2mortal(newSViv( ev->data.note.channel));
+			ST(9)  = sv_2mortal(newSViv( ev->data.note.channel));
 			ST(10) = sv_2mortal(newSViv( ev->data.note.note));
 			ST(11) = sv_2mortal(newSViv( ev->data.note.velocity));
 			ST(12) = sv_2mortal(newSViv( ev->data.note.off_velocity));
@@ -237,13 +239,19 @@ CODE:
 		case SND_SEQ_EVENT_PGMCHANGE:
 		case SND_SEQ_EVENT_CHANPRESS:
 		case SND_SEQ_EVENT_PITCHBEND:
-			ST(9) = sv_2mortal(newSViv( ev->data.control.channel));
+			ST(9)  = sv_2mortal(newSViv( ev->data.control.channel));
 			ST(10) = sv_2mortal(newSViv( ev->data.control.unused[0]));
 			ST(11) = sv_2mortal(newSViv( ev->data.control.unused[1]));
 			ST(12) = sv_2mortal(newSViv( ev->data.control.unused[2]));
 			ST(13) = sv_2mortal(newSViv( ev->data.control.param));
 			ST(14) = sv_2mortal(newSViv( ev->data.control.value));
 			XSRETURN(15);
+			break;
+
+		case SND_SEQ_EVENT_SYSEX:
+			/* extract the *char+strlen and return it as a perl string */
+			ST(9) = sv_2mortal(newSVpv( ev->data.ext.ptr, ev->data.ext.len));
+			XSRETURN(10);
 			break;
 
 		default:
@@ -280,7 +288,7 @@ CODE:
 }
 
 int
-xs_output (type, flags, tag, queue, t, src_client, src_port, dest_client, dest_port, data1, data2, data3, data4, data5, data6)
+xs_output (type, flags, tag, queue, t, src_client, src_port, dest_client, dest_port, data1, data2, data3, data4, data5, data6, sysex_data)
 	int    type
 	int    flags
 	int    tag
@@ -296,6 +304,7 @@ xs_output (type, flags, tag, queue, t, src_client, src_port, dest_client, dest_p
 	int    data4
 	int    data5
 	int    data6
+	char * sysex_data
 CODE:
 {
 	dMY_CXT;
@@ -311,7 +320,6 @@ CODE:
     ev.dest.client   = dest_client;
     ev.dest.port     = dest_port;
     static int * data;
-        
     switch( ev.type ) {
         case SND_SEQ_EVENT_NOTE:
         case SND_SEQ_EVENT_NOTEON:
@@ -339,8 +347,9 @@ CODE:
             */
             break;
 
-		case SND_SEQ_EVENT_SYSEX: /* the calling args will need a string */
-			/* snd_seq_ev_set_variable ( ev, datalen, dataptr ) */
+		case SND_SEQ_EVENT_SYSEX:
+			/* data1 must be the length of it; it could contain \0's */
+			snd_seq_ev_set_variable ( &ev, data1, sysex_data );
 			break;
     }
     /* If not a direct event, use the queue */
@@ -470,6 +479,18 @@ CODE:
     }
 	XSRETURN(iST);
 }
+
+int
+xs_syncoutput()
+CODE:
+{
+	dMY_CXT;
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
+    int rc = snd_seq_sync_output_queue( MY_CXT.seq_handle );
+	ST(0) = sv_2mortal(newSVnv(rc));
+	XSRETURN(1);
+}
+
 
 int
 xs_constname2value ()

@@ -6,3 +6,5 @@ Makefile.PL
 test.pl
 ALSA.pm
 ALSA.xs
+examples/apmid
+examples/armid

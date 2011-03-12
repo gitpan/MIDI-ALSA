@@ -1,3 +1,4 @@
+20110303 1.04 output, input, *2alsa and alsa2* now handle sysex events
 20110228 1.03 add listclients, listconnectedto and listconnectedfrom
 20110213 1.02 add disconnectto and disconnectfrom
 20110211 1.01 translated from midialsa.lua, first released version

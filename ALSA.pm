@@ -9,7 +9,10 @@
 
 package MIDI::ALSA;
 no strict;
-$VERSION = '1.03';
+use bytes;
+$VERSION = '1.04';
+# 20110303 1.04 output, input, *2alsa and alsa2* now handle sysex events
+# 20110301 1.03 add listclients, listnumports, listconnectedto etc
 # 20110213 1.02 add disconnectto and disconnectfrom
 # 20110211 1.01 first released version
 
@@ -22,7 +25,7 @@ require DynaLoader;
 @EXPORT_OK = qw(client connectfrom connectto fd id
  input inputpending output start status stop syncoutput
  noteevent noteonevent noteoffevent pgmchangeevent pitchbendevent chanpress 
- alsa2opusevent alsa2scoreevent scoreevent2alsa rawevent2alsa);
+ alsa2scoreevent scoreevent2alsa);
 @EXPORT_CONSTS = ();
 %EXPORT_TAGS = (ALL => [@EXPORT,@EXPORT_OK], CONSTS => [@EXPORT_CONSTS]);
 bootstrap MIDI::ALSA $VERSION;
@@ -112,16 +115,7 @@ sub client {
     }
     return &xs_client($name, $ninputports, $noutputports, $createqueue);
 }
-sub input {
-    my @ev = &xs_input();
-	my @data = @ev[9..$#ev];
-    return ( $ev[0], $ev[1], $ev[2], $ev[3], $ev[4],
-     [$ev[5],$ev[6]], [$ev[7],$ev[8]], [@data] )
 
-}
-sub inputpending {
-    return &xs_inputpending();
-}
 sub connectfrom { my ($myport, $src_client, $src_port) = @_;
 	if (!defined $src_port and $src_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
 		$src_client = 0+$1; $src_port = 0+$2;
@@ -152,15 +146,54 @@ sub fd {
 sub id {
     return &xs_id();
 }
+sub input {
+    my @ev = &xs_input();
+	if (! @ev) { return undef; }   # 1.04 probably received an interrupt
+	my @data = @ev[9..$#ev];
+	if ($ev[0] == SND_SEQ_EVENT_SYSEX) { # there's only one element in @data;
+		# If you receive a sysex remember the data-string starts
+		# with a F0 and and ends with a F7.  "\xF0}hello world\xF7"
+		# If you're receiving a multiblock sysex, the first block has its
+		# F0 at the beginning, and the last block has a F7 at the end.
+    	return ( $ev[0], $ev[1], $ev[2], $ev[3], $ev[4],
+		  [$ev[5],$ev[6]], [$ev[7],$ev[8]], [$data[0]] );
+		# We could test for a top bit set and if so return undef ...
+		# but that would mean every caller would have to test for undef :-(
+		# We can't just hang waiting for the next event, because the caller
+		# may have called inputpending() and probably doesn't want to hang.
+	} else {
+    	return ( $ev[0], $ev[1], $ev[2], $ev[3], $ev[4],
+		  [$ev[5],$ev[6]], [$ev[7],$ev[8]], [@data] );
+	}
+}
+sub inputpending {
+    return &xs_inputpending();
+}
 sub output { my @ev = @_;
 	if (! @ev) { return 0; }
 	my @src  = @{$ev[5]};
 	my @dest = @{$ev[6]};
 	my @data = @{$ev[7]};
-	return &xs_output($ev[0], $ev[1], $ev[2], $ev[3], $ev[4],
-	 $src[0],$src[1], $dest[0],$dest[1],
-	 $data[0],$data[1],$data[2],$data[3],$data[4]||0,$data[5]||0);
-
+	if ($ev[0] == SND_SEQ_EVENT_SYSEX) { # $data[0]=length, $data[6]=char*
+		my $s = "$data[0]";
+		# If you're sending a sysex remember the data-string needs an F0
+		# and an F7.  (SND_SEQ_EVENT_SYSEX, ...., ["\xF0}hello world\xF7"])
+		# ( If you're sending a multiblock sysex, the first block needs its
+		#   F0 at the beginning, and the last block needs a F7 at the end. )
+		if ($s =~ /^\xF0.*[\x80-\xF6\xF8-\xFF]/) {
+			if (length($s) > 16) { $s = substr($s,0,14).'...'; }
+			warn "MIDI::ALSA::output: SYSEX data '$s' has a top bit set\n";
+			return undef;
+			# some misgivings... this is stricter than aplaymidi, and than alsa
+		}
+		return &xs_output($ev[0], $ev[1], $ev[2], $ev[3], $ev[4],
+		  $src[0],$src[1], $dest[0],$dest[1],
+		  length($s),1,2,3,4,5,$s);   #  (encoding?)
+	} else {
+		return &xs_output($ev[0], $ev[1], $ev[2], $ev[3], $ev[4],
+		  $src[0],$src[1], $dest[0],$dest[1],
+		  $data[0], $data[1], $data[2],$data[3],$data[4]||0,$data[5]||0,q{});
+	}
 }
 sub start {
 	return &xs_start();
@@ -179,7 +212,7 @@ sub syncoutput {
 sub noteevent { my ($ch,$key,$vel,$start,$duration ) = @_;
 	return ( SND_SEQ_EVENT_NOTE, SND_SEQ_TIME_STAMP_REAL,
 		0, 0, $start, [ 0,0 ], [ 0,0 ],
-		[$ch,$key,$vel, 0, int(0.5 + 1000*$duration) ] );
+		[$ch,$key,$vel, $vel, int(0.5 + 1000*$duration) ] );
 }
 sub noteonevent { my ($ch,$key,$vel ) = @_;
 	return ( SND_SEQ_EVENT_NOTEON, SND_SEQ_TIME_STAMP_REAL,
@@ -189,7 +222,7 @@ sub noteonevent { my ($ch,$key,$vel ) = @_;
 sub noteoffevent { my ($ch,$key,$vel ) = @_;
 	return ( SND_SEQ_EVENT_NOTEOFF, SND_SEQ_TIME_STAMP_REAL,
 		0, SND_SEQ_QUEUE_DIRECT, 0,
-		[ 0,0 ], [ 0,0 ], [$ch,$key,$vel, 0, 0 ] );
+		[ 0,0 ], [ 0,0 ], [$ch,$key,$vel, $vel, 0 ] );
 }
 sub pgmchangeevent { my ($ch,$value,$start ) = @_;
 	# If start is not provided, the event will be sent directly.
@@ -227,6 +260,21 @@ sub chanpress { my ($ch,$value,$start ) = @_;
 		[ 0,0 ], [ 0,0 ], [$ch, 0,0,0,0, $value ] );
 	}
 }
+sub sysex { my ($ch,$value,$start ) = @_;
+	if ($value =~ /[\x80-\xFF]/) {
+		warn "sysex: the string $value has top-bits set :-(\n";
+		return undef;
+	}
+	if (! defined $start) {
+		return ( SND_SEQ_EVENT_SYSEX, SND_SEQ_TIME_STAMP_REAL,
+		0, SND_SEQ_QUEUE_DIRECT, 0,
+		[ 0,0 ], [ 0,0 ], ["\xF0$value\xF7",] );
+	} else {
+		return ( SND_SEQ_EVENT_SYSEX, SND_SEQ_TIME_STAMP_REAL,
+		0, 0, $start,
+		[ 0,0 ], [ 0,0 ], ["\xF0$value\xF7",] );
+	}
+}
 
 
 #------------ public functions to handle MIDI.lua events  -------------
@@ -234,89 +282,129 @@ sub chanpress { my ($ch,$value,$start ) = @_;
 # for data args see http://alsa-project.org/alsa-doc/alsa-lib/seq.html
 # http://alsa-project.org/alsa-doc/alsa-lib/group___seq_events.html
 
-my $ticks_so_far = 0;
 my %chapitch2note_on_events = ();  # this mechanism courtesy of MIDI.lua
-my $want_score = 0;
-sub alsa2opusevent { my @alsaevent = @_;
-	my $new_ticks = int(0.5 + 1000*$alsaevent[4]);
-	my $ticks;
-	my $function_name;
-	if ($want_score) {
-		$function_name = 'MIDI::ALSA::alsa2scoreevent';
-		$ticks = $new_ticks;
-	} else {
-		$function_name = 'MIDI::ALSA::alsa2opusevent';
-		$ticks = $new_ticks - $ticks_so_far;
-		if ($ticks < 0) { $ticks = 0; }
-		$ticks_so_far = $new_ticks;
-	}
-	my @data = @{$alsaevent[7]};   # deepcopy?
+sub alsa2scoreevent { my @alsaevent = @_;
+	if (@alsaevent<8) { warn "alsa2scoreevent: event too short\n"; return (); }
+	my $ticks = int(0.5 + 1000*$alsaevent[4]);
+	my $func  = 'MIDI::ALSA::alsa2scoreevent';
+	my @data  = @{$alsaevent[7]};   # deepcopy needed?
 	# snd_seq_ev_note_t: channel, note, velocity, off_velocity, duration
 	if ($alsaevent[0] == SND_SEQ_EVENT_NOTE) {
 		return ( 'note',$ticks,$data[4],$data[0],$data[1],$data[2] );
 	} elsif ($alsaevent[0] == SND_SEQ_EVENT_NOTEOFF
-	 or ($alsaevent[0] == SND_SEQ_EVENT_NOTEON and $data[2] == 0)) {
-		if ($want_score) {
-			$want_score = 0;  # 1.01
-			my $cha = $data[0];
-			my $pitch = $data[1];
-			my $key = $cha*128 + $pitch;
-			my @pending_notes = @{$chapitch2note_on_events{$key}};
-			if (@pending_notes and $pending_notes > 0) {
-				my $new_e = pop @pending_notes; # pop
-				$new_e->[2] = $ticks - $new_e->[1];
-				return @{$new_e};
-			} elsif ($pitch > 127) {
-				warn("$function_name: note_off with no note_on, bad pitch=$pitch");
-				return undef;
-			} else {
-				warn("$function_name: note_off with no note_on cha=$cha pitch=$pitch");
-				return undef;
-			}
+	 or ($alsaevent[0] == SND_SEQ_EVENT_NOTEON and !$data[2])) {
+		my $cha = $data[0];
+		my $pitch = $data[1];
+		my $key = $cha*128 + $pitch;
+		my @pending_notes = @{$chapitch2note_on_events{$key}};
+		if (@pending_notes and @pending_notes > 0) {  # 1.04
+			my $new_e = pop @pending_notes; # pop
+			$new_e->[2] = $ticks - $new_e->[1];
+			return @{$new_e};
+		} elsif ($pitch > 127) {
+			warn("$func: note_off with no note_on, bad pitch=$pitch");
+			return undef;
 		} else {
-			return ( 'note_off',$ticks,$data[0],$data[1],$data[2] )
+			warn("$func: note_off with no note_on cha=$cha pitch=$pitch");
+			return undef;
 		}
 	} elsif ($alsaevent[0] == SND_SEQ_EVENT_NOTEON) {
 		my $cha = $data[0];
 		my $pitch = $data[1];
-		if ($want_score) {
-			my $key = $cha*128 + $pitch;
-			my $new_e = ['note',$ticks,0,$cha,$pitch,$data[2]];
-			if ($chapitch2note_on_events{$key}) {
-				push @{$chapitch2note_on_events[$key]}, $new_e;
-			} else {
-				$chapitch2note_on_events{$key} = $new_e;
-			}
+		my $key = $cha*128 + $pitch;
+		my $new_e = ['note',$ticks,0,$cha,$pitch,$data[2]];
+		if ($chapitch2note_on_events{$key}) {
+			push @{$chapitch2note_on_events[$key]}, $new_e;
 		} else {
-			return ( 'note_on',$ticks,$cha,$pitch,$data[2] );
+			$chapitch2note_on_events{$key} = [ $new_e ];  # 1.04
 		}
+		return undef;
 	} elsif ($alsaevent[0] == SND_SEQ_EVENT_CONTROLLER) {
-		$want_score = 0;  # 1.01
 		return ( 'control_change',$ticks,$data[0],$data[4],$data[5] );
 	} elsif ($alsaevent[0] == SND_SEQ_EVENT_PGMCHANGE) {
-		$want_score = 0;  # 1.01
 		return ( 'patch_change',$ticks,$data[0],$data[5] );
 	} elsif ($alsaevent[0] == SND_SEQ_EVENT_PITCHBEND) {
-		$want_score = 0;  # 1.01
 		return ( 'pitch_wheel_change',$ticks,$data[0],$data[5] );
 	} elsif ($alsaevent[0] == SND_SEQ_EVENT_CHANPRESS) {
-		$want_score = 0;  # 1.01
 		return ( 'channel_after_touch',$ticks,$data[0],$data[5] );
+	} elsif ($alsaevent[0] == SND_SEQ_EVENT_SYSEX) {  # 1.04
+		my $s = $data[0];
+		if ($s =~ s/^\xF0//) { return ( 'sysex_f0',$ticks,$s );
+		}      else          { return ( 'sysex_f7',$ticks,$s );
+		}
+	} elsif ($alsaevent[0] == SND_SEQ_EVENT_PORT_SUBSCRIBED
+	      or $alsaevent[0] == SND_SEQ_EVENT_PORT_UNSUBSCRIBED) {
+		return undef; # only have meaning to an ALSA client
 	} else {
-		$want_score = 0;  # 1.01
-		warn("$function_name: unsupported event-type $alsaevent[0]\n");
+		warn("$func: unsupported event-type $alsaevent[0]\n");
 		return undef;
 	}
-	$want_score = 0;
-	return;
-}
-sub alsa2scoreevent {
-	$want_score = 1;
-	return alsa2opusevent(@_);
 }
 sub scoreevent2alsa { my @event = @_;
-}
-sub rawevent2alsa {
+	# what's this? 1.03 already and completely missing !
+    my $time_in_secs = 0.001*$event[1];  # ms ticks -> secs
+    if ($event[0] eq 'note') {
+        # note on and off with duration; event data type = snd_seq_ev_note_t
+        return ( SND_SEQ_EVENT_NOTE, SND_SEQ_TIME_STAMP_REAL,
+         0, 0, $time_in_secs, [ 0,0 ], [ 0,0 ],
+         [ $event[3], $event[4], $event[5], 0, $event[2] ] );
+    } elsif ($event[0] eq 'control_change') {
+        # controller; snd_seq_ev_ctrl_t; channel, unused[3], param, value
+        return ( SND_SEQ_EVENT_CONTROLLER, SND_SEQ_TIME_STAMP_REAL,
+         0, 0, $time_in_secs, [ 0,0 ], [ 0,0 ],
+         [ $event[2], 0,0,0, $event[3], $event[4] ] );
+    } elsif ($event[0] eq 'patch_change') {
+        # program change; data type=snd_seq_ev_ctrl_t, param is ignored
+        return ( SND_SEQ_EVENT_PGMCHANGE, SND_SEQ_TIME_STAMP_REAL,
+         0, 0, $time_in_secs, [ 0,0 ], [ 0,0 ],
+         [ $event[2], 0,0,0, 0, $event[3] ] );
+    } elsif ($event[0] eq 'pitch_wheel_change') {
+        # pitchwheel; snd_seq_ev_ctrl_t; data is from -8192 to 8191
+        return ( SND_SEQ_EVENT_PITCHBEND, SND_SEQ_TIME_STAMP_REAL,
+         0, 0, $time_in_secs, [ 0,0 ], [ 0,0 ],
+         [ $event[2], 0,0,0, 0, $event[3] ] );
+    } elsif ($event[0] eq 'channel_after_touch') {
+        # channel_after_touch; snd_seq_ev_ctrl_t; data is from -8192 to 8191
+        return ( SND_SEQ_EVENT_CHANPRESS, SND_SEQ_TIME_STAMP_REAL,
+         0, 0, $time_in_secs, [ 0,0 ], [ 0,0 ],
+         [ $event[2], 0,0,0, 0, $event[3] ] );
+#    } elsif ($event[0] eq 'key_signature') {
+#        # key_signature; snd_seq_ev_ctrl_t; data is from -8192 to 8191
+#        return ( SND_SEQ_EVENT_KEYSIGN, SND_SEQ_TIME_STAMP_REAL,
+#         0, 0, $time_in_secs, [ 0,0 ], [ 0,0 ],
+#         [ $event[2], 0,0,0, $event[3], $event[4] ] );
+#    } elsif ($event[0] eq 'set_tempo') {
+#        # set_tempo; snd_seq_ev_queue_control
+#        return ( SND_SEQ_EVENT_TEMPO, SND_SEQ_TIME_STAMP_REAL,
+#         0, 0, $time_in_secs, [ 0,0 ], [ 0,0 ],
+#         [ $event[2], 0,0,0, 0, 0 ] );
+    } elsif ($event[0] eq 'sysex_f0') {
+		# If you're sending a sysex remember the data-string needs an
+		# an F7 at the end.  ('sysex_f0', $ticks, "}hello world\xF7")
+		# If you're sending a multiblock sysex, the first block should
+		# be a sysex_f0, all subsequent blocks should be sysex_f7's,
+		# of which the last block needs a F7 at the end.
+		my $s = $event[2];
+		$s =~ s/^([^\xF0])/\xF0$1/;
+        return ( SND_SEQ_EVENT_SYSEX, SND_SEQ_TIME_STAMP_REAL,
+         0, 0, $time_in_secs, [ 0,0 ], [ 0,0 ], [ $s, ] );
+    } elsif ($event[0] eq 'sysex_f7') {
+		# If you're sending a multiblock sysex, the first block should
+		# be a sysex_f0, all subsequent blocks should be sysex_f7's,
+		# of which the last block needs a F7 at the end.
+		# You can also use a sysex_f7 to sneak in a MIDI command that
+		# cannot be otherwise specified in .mid files, such as System
+		# Common messages except SysEx, or System Realtime messages.
+		# E.g., you can output a MIDI Tune-Request message (F6) by
+		# ('sysex_f7', <delta>, "\xF6") which will put the event
+		# "<delta> F7 01 F6" into the .mid file, and hence the
+		# byte F6 onto the wire.
+        return ( SND_SEQ_EVENT_SYSEX, SND_SEQ_TIME_STAMP_REAL,
+         0, 0, $time_in_secs, [ 0,0 ], [ 0,0 ], [ $event[2], ] );
+    } else {
+        # Meta-event, or unsupported event
+        return undef;
+    }
 }
 
 # 1.03
@@ -367,7 +455,7 @@ MIDI::ALSA - the ALSA library, plus some interface functions
  MIDI::ALSA::connectto( 1, 20, 0 );   # output port is higher (1)
  while (1) {
      my @alsaevent = MIDI::ALSA::input();
-     if ($alsaevent[0] == SND_SEQ_EVENT_PORT_UNSUBSCRIBED) { last; }
+     if ($alsaevent[0] == SND_SEQ_EVENT_PORT_UNSUBSCRIBED()) { last; }
      MIDI::ALSA::output( @alsaevent );
  }
 
@@ -400,10 +488,10 @@ id(), input(), inputpending(), output(), start(), status(), stop(), syncoutput()
 
 Functions based on those in I<alsamidi.py>:
 noteevent(), noteonevent(), noteoffevent(), pgmchangeevent(),
-pitchbendevent(), chanpress()
+pitchbendevent(), chanpress(), sysex()
 
 Functions to interface with I<MIDI-Perl>:
-alsa2opusevent(), alsa2scoreevent(), scoreevent2alsa(), rawevent2alsa()
+alsa2scoreevent(), scoreevent2alsa()
 
 Functions to get the current ALSA status:
 listclients(), listnumports(), listconnectedto(), listconnectedfrom()
@@ -482,10 +570,17 @@ not as strings, and must therefore be used without any dollar-sign e.g.:
  if ($event[0] == MIDI::ALSA::SND_SEQ_EVENT_PORT_UNSUBSCRIBED) { ...
 
 Note that if the event is of type SND_SEQ_EVENT_PORT_UNSUBSCRIBED
-then the remote client and port do not seem to be correct...
+then the remote client and port do not get set;
+you need to use listconnected() to see what's happened.
 
-The data array is documented in
-http://alsa-project.org/alsa-doc/alsa-lib/seq.html
+The data array is mostly as documented in
+http://alsa-project.org/alsa-doc/alsa-lib/seq.html.
+For NOTE events,  the elements are
+( $channel, $pitch, $velocity, unused, $duration );
+For SYSEX events, the data array contains just one element:
+the byte-string, including any F0 and F7 bytes.
+For most other events,  the elements are
+($channel, unused,unused,unused, $param, $value)
 
 =item inputpending()
 
@@ -497,7 +592,7 @@ and the next event will be of type SND_SEQ_EVENT_PORT_UNSUBSCRIBED
 =item output($type,$flags,$tag,$queue,$time,\@source,\@destination,\@data)
 
 Send an ALSA-event-array to an output port.
-The format of the event is dicussed in input() above.
+The format of the event is discussed in input() above.
 The event will be output immediately
 either if no queue was created in the client,
 or if the I<queue> parameter is set to SND_SEQ_QUEUE_DIRECT
@@ -518,11 +613,11 @@ If the queue buffer is full, I<output>() will wait
 until space is available to output the event.
 Use I<status>() to know how many events are scheduled in the queue.
 
-=item start(queue)
+=item start()
 
 Start the queue. It is ignored if the client does not have a queue. 
 
-=item status(queue)
+=item status()
 
 Return ($status,$time,$events ) of the queue.
 
@@ -534,11 +629,11 @@ If the client does not have a queue then (0,0,0) is returned.
 Unlike in the I<alsaseq.py> Python module,
 the I<time> element is in floating-point seconds.
 
-=item stop(queue)
+=item stop()
 
 Stop the queue. It is ignored if the client does not have a queue. 
 
-=item syncoutput(queue)
+=item syncoutput()
 
 Wait until output events are processed.
 
@@ -580,12 +675,15 @@ if I<start> is provided, the event will be scheduled in a queue.
 Unlike in the I<alsaseq.py> Python module,
 the I<start> element, when provided, is in floating-point seconds.
 
-=item alsa2opusevent( @alsaevent )
+=item sysex( $ch, $string, $start )
 
-Returns an event in the millisecond-tick score-format
-used by the I<MIDI.lua> and I<MIDI.py> modules,
-based on the opus-format in Sean Burke's MIDI-Perl CPAN module. See:
- http://www.pjb.com.au/comp/lua/MIDI.html#events
+Returns an ALSA-event-array to be sent by I<output>().
+If I<start> is not used, the event will be sent directly;
+if I<start> is provided, the event will be scheduled in a queue. 
+The string should start with your Manufacturer ID,
+but should not contain any of the F0 or F7 bytes,
+they will be added automatically;
+indeed the string must not contain any bytes with the top-bit set.
 
 =item alsa2scoreevent( @alsaevent )
 
@@ -610,9 +708,12 @@ based on the score-format in Sean Burke's MIDI-Perl CPAN module. See:
 For example:
  output(scoreevent2alsa('note',4000,1000,0,62,110))
 
-=item rawevent2alsa()
-
-Unimplemented
+Some events in a .mid file have no equivalent
+real-time-midi event (which is the sort that ALSA deals in);
+these events will cause scoreevent2alsa() to return undef.
+Therefore if you are going through the events in a midi score
+converting them with scoreevent2alsa(),
+you should check that the result is not undef before doing anything further.
 
 =item listclients()
 
@@ -663,10 +764,10 @@ a bit like I<aconnect 32 20>
 If an event is of type SND_SEQ_EVENT_PORT_UNSUBSCRIBED
 then the remote client and port seem to be zeroed-out,
 which makes it hard to know which client has just disconnected.
+You have to consult listconnectedto() and listconnectedfrom()
 
-ALSA does not transmit Meta-Events like I<text_event>, which is sad,
-but there's not much can be done about it.
-Worse: output() and input() do not handle sysex events, which they should.
+ALSA does not transmit Meta-Events like I<text_event>,
+and there's not much can be done about that.
 
 =head1 AUTHOR
 

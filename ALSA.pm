@@ -10,7 +10,8 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.04';
+$VERSION = '1.05';
+# 20110322 1.05 controllerevent
 # 20110303 1.04 output, input, *2alsa and alsa2* now handle sysex events
 # 20110301 1.03 add listclients, listnumports, listconnectedto etc
 # 20110213 1.02 add disconnectto and disconnectfrom
@@ -24,8 +25,8 @@ require DynaLoader;
 @EXPORT = ();
 @EXPORT_OK = qw(client connectfrom connectto fd id
  input inputpending output start status stop syncoutput
- noteevent noteonevent noteoffevent pgmchangeevent pitchbendevent chanpress 
- alsa2scoreevent scoreevent2alsa);
+ noteevent noteonevent noteoffevent pgmchangeevent pitchbendevent
+ controllerevent chanpress alsa2scoreevent scoreevent2alsa);
 @EXPORT_CONSTS = ();
 %EXPORT_TAGS = (ALL => [@EXPORT,@EXPORT_OK], CONSTS => [@EXPORT_CONSTS]);
 bootstrap MIDI::ALSA $VERSION;
@@ -246,6 +247,18 @@ sub pitchbendevent { my ($ch,$value,$start ) = @_;
 		return ( SND_SEQ_EVENT_PITCHBEND, SND_SEQ_TIME_STAMP_REAL,
 		0, 0, $start,
 		[ 0,0 ], [ 0,0 ], [$ch, 0,0,0,0, $value ] );
+	}
+}
+sub controllerevent { my ($ch,$key,$value,$start ) = @_;  # 1.05
+	# If start is not provided, the event will be sent directly.
+	if (! defined $start) {
+		return ( SND_SEQ_EVENT_CONTROLLER, SND_SEQ_TIME_STAMP_REAL,
+		0, SND_SEQ_QUEUE_DIRECT, 0,
+		[ 0,0 ], [ 0,0 ], [$ch, 0,0,0, $key, $value ] );
+	} else {
+		return ( SND_SEQ_EVENT_CONTROLLER, SND_SEQ_TIME_STAMP_REAL,
+		0, 0, $start,
+		[ 0,0 ], [ 0,0 ], [$ch, 0,0,0, $key, $value ] );
 	}
 }
 sub chanpress { my ($ch,$value,$start ) = @_;
@@ -488,7 +501,7 @@ id(), input(), inputpending(), output(), start(), status(), stop(), syncoutput()
 
 Functions based on those in I<alsamidi.py>:
 noteevent(), noteonevent(), noteoffevent(), pgmchangeevent(),
-pitchbendevent(), chanpress(), sysex()
+pitchbendevent(), controllerevent(), chanpress(), sysex()
 
 Functions to interface with I<MIDI-Perl>:
 alsa2scoreevent(), scoreevent2alsa()
@@ -666,6 +679,15 @@ If I<start> is not used, the event will be sent directly;
 if I<start> is provided, the event will be scheduled in a queue. 
 Unlike in the I<alsaseq.py> Python module,
 the I<start> element, when provided, is in floating-point seconds.
+
+=item controllerevent( $ch, $controllernum, $value, $start )
+
+Returns an ALSA-event-array to be sent by I<output>().
+If I<start> is not used, the event will be sent directly;
+if I<start> is provided, the event will be scheduled in a queue. 
+Unlike in the I<alsaseq.py> Python module,
+the I<start> element, when provided, is in floating-point seconds.
+
 
 =item chanpress( $ch, $value, $start )
 

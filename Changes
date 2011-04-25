@@ -1,3 +1,4 @@
+20110425 1.05 add the missing xs_status routine, and test status()
 20110303 1.04 output, input, *2alsa and alsa2* now handle sysex events
 20110228 1.03 add listclients, listconnectedto and listconnectedfrom
 20110213 1.02 add disconnectto and disconnectfrom

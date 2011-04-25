@@ -9,8 +9,9 @@
 
 use MIDI::ALSA qw(:ALL);
 # use Class::MakeMethods::Utility::Ref qw( ref_clone ref_compare );
+use Time::HiRes;
 use Data::Dumper;
-use Test::Simple tests => 50;
+use Test::Simple tests => 52;
 
 my @virmidi = virmidi_clients_and_files();
 if (@virmidi < 4) {
@@ -22,6 +23,9 @@ ok(! defined $rc, "inputpending() with no client returned undef");
 
 $rc = MIDI::ALSA::client('test.pl',2,2,1);
 ok($rc, "client('test.pl',2,2,1)");
+
+my ($seconds, $microseconds) = Time::HiRes::gettimeofday;
+my $start_time = $seconds + 1.0E-6 * $microseconds;
 
 if (@virmidi >= 2 ) {
 	$rc = MIDI::ALSA::connectfrom(1,$virmidi[0],0);
@@ -116,8 +120,8 @@ if (@virmidi < 2) {
 	$alsaevent[4] = 300;
 	${$alsaevent[7]}[3] = 0;
 	${$alsaevent[7]}[4] = 0;
-	# print "alsaevent=".Dumper(@alsaevent);
-	# print "correct  =".Dumper(@correct);
+	#print "alsaevent=".Dumper(@alsaevent);
+	#print "correct  =".Dumper(@correct);
 	ok(Dumper(@alsaevent) eq Dumper(@correct),
 	 'input() returns (6,1,0,1,300,[24,0],[id,1],[0,60,101,0,0])');
 	@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
@@ -237,6 +241,14 @@ ok($latency < 20, "latency was $latency ms");
 
 $rc = MIDI::ALSA::disconnectfrom(1,$id,2);
 ok($rc, "disconnectfrom(1,$id,2)");
+
+my($running, $time, $events) = MIDI::ALSA::status();
+($seconds, $microseconds) = Time::HiRes::gettimeofday();
+my $end_time = $seconds + 1.0E-6 * $microseconds;
+ok($running,'status() reports running');
+my $elapsed = $end_time-$start_time;
+ok(abs($end_time-$start_time - $time) < 0.1,
+"status() reports time = $time not $elapsed");
 
 $rc = MIDI::ALSA::stop();
 ok($rc,'stop() returns success');

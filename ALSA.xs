@@ -393,18 +393,18 @@ CODE:
 	}
 	snd_seq_queue_status_t *queue_status;
 	int running, events;
-	const snd_seq_real_time_t *current_time;
+	const snd_seq_real_time_t *rt;
 	snd_seq_queue_status_malloc( &queue_status );
 	snd_seq_get_queue_status(MY_CXT.seq_handle, MY_CXT.queue_id, queue_status);
-	current_time = snd_seq_queue_status_get_real_time( queue_status );
-	running      = snd_seq_queue_status_get_status( queue_status );
-	events       = snd_seq_queue_status_get_events( queue_status );
+	rt      = snd_seq_queue_status_get_real_time( queue_status );
+	running = snd_seq_queue_status_get_status( queue_status );
+	events  = snd_seq_queue_status_get_events( queue_status );
 	snd_seq_queue_status_free( queue_status );
-	double sec   = current_time->tv_sec;
-	double nsec  = current_time->tv_nsec;
+	/* double sec   = rt->tv_sec; */
+	/* double nsec  = rt->tv_nsec; */
 	/* returns: running, time, events */
     ST(0) = sv_2mortal(newSVnv(running));
-    ST(1) = sv_2mortal(newSVnv(sec + 1.0e-9*nsec));
+    ST(1) = sv_2mortal(newSVnv(rt->tv_sec + 1.0e-9*rt->tv_nsec));
     ST(2) = sv_2mortal(newSVnv(events));
     XSRETURN(3);
 }

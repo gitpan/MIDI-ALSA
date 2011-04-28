@@ -10,7 +10,7 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.05';
+$VERSION = '1.06';
 # 20110322 1.05 controllerevent
 # 20110303 1.04 output, input, *2alsa and alsa2* now handle sysex events
 # 20110301 1.03 add listclients, listnumports, listconnectedto etc
@@ -32,6 +32,7 @@ require DynaLoader;
 bootstrap MIDI::ALSA $VERSION;
 
 my $maximum_nports = 4;
+my $StartTime = 0;
 #------------- public constants from alsa/asoundlib.h  -------------
 my %k2v = &xs_constname2value();
 while (my ($k,$v) = each %k2v) {
@@ -197,10 +198,16 @@ sub output { my @ev = @_;
 	}
 }
 sub start {
-	return &xs_start();
+	my $rc = &xs_start();
+	#$StartTime = 1.0e-6 * Time::HiRes::usecs();   # zero tv_secs workaround
+	return $rc;
 }
 sub status {
-	return &xs_status();
+	my ($is_running, $now, $events) = &xs_status();
+	#if ($is_running and $now < 1.0) {
+	 	#$now = (1.0e-6 * Time::HiRes::usecs()) - $StartTime;   # zero tv_secs workaround
+	#}
+	return ($is_running, $now, $events);
 }
 sub stop {
 	return &xs_stop();

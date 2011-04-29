@@ -1,4 +1,5 @@
-2011 ??  1.06 
+20110430 1.07 reposition call to free() in xs_status
+20110428 1.06 fix bug in status() in the time return-value
 20110425 1.05 add the missing xs_status routine, and test status()
 20110303 1.04 output, input, *2alsa and alsa2* now handle sysex events
 20110228 1.03 add listclients, listconnectedto and listconnectedfrom

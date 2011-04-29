@@ -399,13 +399,11 @@ CODE:
 	rt      = snd_seq_queue_status_get_real_time( queue_status );
 	running = snd_seq_queue_status_get_status( queue_status );
 	events  = snd_seq_queue_status_get_events( queue_status );
-	snd_seq_queue_status_free( queue_status );
-	/* double sec   = rt->tv_sec; */
-	/* double nsec  = rt->tv_nsec; */
-	/* returns: running, time, events */
+	/* returns: running, time in floating-point seconds, events */
     ST(0) = sv_2mortal(newSVnv(running));
     ST(1) = sv_2mortal(newSVnv(rt->tv_sec + 1.0e-9*rt->tv_nsec));
     ST(2) = sv_2mortal(newSVnv(events));
+	snd_seq_queue_status_free( queue_status );
     XSRETURN(3);
 }
 

@@ -11,7 +11,7 @@ use MIDI::ALSA qw(:ALL);
 # use Class::MakeMethods::Utility::Ref qw( ref_clone ref_compare );
 use Time::HiRes;
 use Data::Dumper;
-use Test::Simple tests => 52;
+use Test::Simple tests => 53;
 
 my @virmidi = virmidi_clients_and_files();
 if (@virmidi < 4) {
@@ -247,6 +247,14 @@ my($running, $time, $events) = MIDI::ALSA::status();
 my $end_time = $seconds + 1.0E-6 * $microseconds;
 ok($running,'status() reports running');
 my $elapsed = $end_time-$start_time;
+ok(abs($end_time-$start_time - $time) < 0.1,
+"status() reports time = $time not $elapsed");
+
+sleep(1);
+($running, $time, $events) = MIDI::ALSA::status();
+($seconds, $microseconds) = Time::HiRes::gettimeofday();
+$end_time = $seconds + 1.0E-6 * $microseconds;
+$elapsed = $end_time-$start_time;
 ok(abs($end_time-$start_time - $time) < 0.1,
 "status() reports time = $time not $elapsed");
 

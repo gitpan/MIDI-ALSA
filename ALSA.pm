@@ -10,7 +10,9 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.06';
+$VERSION = '1.07';
+# 20110430 1.07 reposition free() in xs_status
+# 20110428 1.06 fix bug in status() in the time return-value
 # 20110322 1.05 controllerevent
 # 20110303 1.04 output, input, *2alsa and alsa2* now handle sysex events
 # 20110301 1.03 add listclients, listnumports, listconnectedto etc
@@ -199,15 +201,10 @@ sub output { my @ev = @_;
 }
 sub start {
 	my $rc = &xs_start();
-	#$StartTime = 1.0e-6 * Time::HiRes::usecs();   # zero tv_secs workaround
 	return $rc;
 }
 sub status {
-	my ($is_running, $now, $events) = &xs_status();
-	#if ($is_running and $now < 1.0) {
-	 	#$now = (1.0e-6 * Time::HiRes::usecs()) - $StartTime;   # zero tv_secs workaround
-	#}
-	return ($is_running, $now, $events);
+	return &xs_status();
 }
 sub stop {
 	return &xs_stop();

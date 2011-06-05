@@ -8,3 +8,6 @@ ALSA.pm
 ALSA.xs
 examples/apmid
 examples/armid
+examples/midikbd
+examples/midiecho
+examples/midiclick

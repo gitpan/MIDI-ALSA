@@ -19,6 +19,8 @@ not as scalars, but as module subroutines with empty prototypes.
 They must therefore be used without a dollar-sign e.g.:
  if ($event[0] == MIDI::ALSA::SND_SEQ_EVENT_PORT_UNSUBSCRIBED) { ...
 
+The example/ directory includes: midikbd, midiecho and midiclick.
+
 To install:
 	perl Makefile.PL; make; make install
 

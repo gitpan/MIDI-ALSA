@@ -10,7 +10,8 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.07';
+$VERSION = '1.08';
+# 2010   ? 1.08
 # 20110430 1.07 reposition free() in xs_status
 # 20110428 1.06 fix bug in status() in the time return-value
 # 20110322 1.05 controllerevent
@@ -679,6 +680,7 @@ the I<start> element, when provided, is in floating-point seconds.
 =item pitchbendevent( $ch, $value, $start )
 
 Returns an ALSA-event-array to be sent by I<output>().
+The value is from -8192 to 8191.
 If I<start> is not used, the event will be sent directly;
 if I<start> is provided, the event will be scheduled in a queue. 
 Unlike in the I<alsaseq.py> Python module,

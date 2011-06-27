@@ -878,6 +878,7 @@ midiecho - Simulates tape-delay echo, on MIDI files or on real-time MIDI
  muscript -midi f.txt | midiecho -c 1 -d 300 -s 25 -e 2 >f.mid
 
  # on real-time (raw) midi :
+ ~> xterm -g 80x16+1+1 -exec 'midiecho -i 32 -d 22 -c 3 -e 4' &
  ~> midiecho -i 32:0 -o 128:0 -c 3 -d 450,400 -e 4,5
  ALSA client 129                midiecho pid=2157
  Input port 129:0 is connected from 32:0

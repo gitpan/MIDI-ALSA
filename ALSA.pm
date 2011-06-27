@@ -10,8 +10,9 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.08';
-# 2010   ? 1.08
+$VERSION = '1.09';
+# 20100624 1.09 $maximum_nports increased from 4 to 64
+# 20100605 1.08 examples include midikbd, midiecho and midiclick
 # 20110430 1.07 reposition free() in xs_status
 # 20110428 1.06 fix bug in status() in the time return-value
 # 20110322 1.05 controllerevent
@@ -34,7 +35,7 @@ require DynaLoader;
 %EXPORT_TAGS = (ALL => [@EXPORT,@EXPORT_OK], CONSTS => [@EXPORT_CONSTS]);
 bootstrap MIDI::ALSA $VERSION;
 
-my $maximum_nports = 4;
+my $maximum_nports = 64;   # 1.09
 my $StartTime = 0;
 #------------- public constants from alsa/asoundlib.h  -------------
 my %k2v = &xs_constname2value();
@@ -520,7 +521,7 @@ listclients(), listnumports(), listconnectedto(), listconnectedfrom()
 
 Create an ALSA sequencer client with zero or more input or output ports,
 and optionally a timing queue.  ninputports and noutputports are created
-if the quantity requested is between 1 and 4 for each.
+if the quantity requested is between 1 and 64 for each.
 If I<createqueue> = true, it creates a queue for stamping the arrival time
 of incoming events and scheduling future start times of outgoing events.
 

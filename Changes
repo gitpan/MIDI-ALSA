@@ -1,3 +1,4 @@
+20110624 1.09 $maximum_nports increased from 4 to 64
 20110605 1.08 examples include midikbd, midiecho and midiclick
 20110430 1.07 reposition call to free() in xs_status
 20110428 1.06 fix bug in status() in the time return-value

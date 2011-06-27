@@ -18,8 +18,8 @@ eval 'require Term::Clui'; if ($@) { die
 	"you'll need to install the Term::Clui module from www.cpan.org\n";
 }
 my $CurrentX; my $CurrentY;
-my $Version      = '4.7';   # quit from drumkit mode cleans up screen properly
-my $VersionDate  = '9may2011';
+my $Version      = '4.8';   # drumkit offer z,x=metronome
+my $VersionDate  = '20jun2011';
 my $Channel   = 0;
 my $Volume    = 100;
 my $Pan       = 64;
@@ -551,7 +551,7 @@ sub char2note {  my $keymap = $_[$[];
     '8'=>60,'9'=>61,'0'=>62,'-'=>63,"="=>64,"\cH"=>81,"\x7F"=>81,
 q=>42,w=>42,e=>44,r=>44,t=>46,y=>46,u=>51,i=>59,o=>49,p=>57,'['=>55,']'=>53,
  a=>37,s=>37,d=>40,f=>40,g=>38,h=>38,j=>41,k=>43,l=>45,';'=>47,';'=>48,"'"=>50,
-	z=>35,x=>35,c=>35,v=>35,b=>35,n=>35,m=>36,','=>36,'.'=>36,'//'=>36,
+	z=>33,x=>34,c=>35,v=>35,b=>35,n=>35,m=>36,','=>36,'.'=>36,'//'=>36,
 		);
 	} else {
 		die "unrecognised KeyMap: $keymap\n"
@@ -698,6 +698,9 @@ midikbd - a simple monophonic ascii-midi-keyboard
  midikbd 3:92:x10:y1 # mouse X-motion controls pan, Y modulation
  midikbd -ka                # selects the "augmented" keymapping
  midikbd -q         # Quiet mode: doesn't display keystroke help
+ xterm -geometry 72x18-1-1 -exec 'midikbd -kd' &
+ xterm -geometry 72x24-1-1 -exec 'midikbd -ka' &
+
  perldoc midikbd
 
  the "piano" keymap (bottom 2 rows round middleC, top 2 treble clef):
@@ -822,7 +825,7 @@ The I<piano> keymap is the default.
  Perc  1   2   3   4   5   6   7   8   9   0   -   =    Congas
  HiHat   q   w   e   r   t   y   u   i   o   p   [   ] Cymbals
  Snare     a   s   d   f   g   h   j   k   l   ;   '   TomToms
-             z   x   c   v   b   n   m   ,   .       BassDrums
+ Metronome   z   x   c   v   b   n   m   ,   .       BassDrums
 
 =item I<-q>
 
@@ -919,6 +922,7 @@ This option is superseded by the I<ChannelSpec> arguments.
 
 =head1 CHANGES
 
+ 20110620  4.8  drumkit offers z,x = metronome
  20110509  4.7  quit from drumkit mode cleans up screen properly
  20110414  4.6  keystroke A changes ALSA connections
  20110321  4.5  now uses MIDI::ALSA, not aconnect and writing to /dev/snd/midi*

@@ -983,8 +983,8 @@ because in the real-time mode keyboard interface B<q> means quit.
 
 B<Coming Soon:>
 currently, echo can only be applied to one channel.
-Over the next couple of releases this restriction will be removed.
-To make this possible, a more compact notation will be introduced
+Over the next couple of releases this restriction may be removed.
+To make this possible, a more compact notation may be introduced
 to replace the -d, -e, -m, -n, -p and -w options:
 
  midiecho -c 0 d300e1p0cc73=95cc10=15 d300e2p74cc10=103
@@ -1048,7 +1048,8 @@ will be preset to use MIDI-Patches
 
 The echo will be changed by the pitch-B<W>heel up 8 cents
 (hundredth's of a semitone).
-This is mainly useful in conjunction with the B<-e>, B<-d> and B<-s>
+
+This can be used in conjunction with the B<-e>, B<-d> and B<-s>
 options to produce the "Automatic-Double-Tracking" effect, e.g.
  midiecho -c 3 -e 4 -d 40 -w -10 -s 0
 
@@ -1058,6 +1059,10 @@ the other way.  It then produces an "echo" of the same volume and just
 40mS late and just 10 cents lower. Because the two sounds are in
 different speakers they don't beat with each other, and sound almost
 like two instruments playing in unison.
+
+With larger parameters, it can be used to produce doubling at
+a large interval; e.g. I<-d 10 -w 1200> causes the original
+voice to be doubled (with a delay of 10ms) at the octave (1200 cents).
 
 =item I<-s 35,20>
 
@@ -1070,7 +1075,8 @@ If an echo ends up with zero volume or less, then it is suppressed.
 If -s is not specified, by default each echo is 30 softer
 than the previous.
 
-The -q option works the same as -s, but is deprecated.
+The -q option works the same as -s, but is deprecated
+because it conflicts with the B<q>=I<quit> command in real-time mode.
 
 =item I<-S>
 

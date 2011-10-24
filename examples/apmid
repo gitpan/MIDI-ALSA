@@ -6,8 +6,8 @@
 #     This script is free software; you can redistribute it and/or      #
 #            modify it under the same terms as Perl itself.             #
 #########################################################################
-my $Version       = '1.0';
-my $VersionDate   = '10mar2011';
+my $Version       = '1.1';
+my $VersionDate   = '23jul2011';
 use open ':locale';
 
 my $Port = 0;
@@ -107,14 +107,8 @@ sub opus2score {  my ($ticks, @opus_tracks) = @_;
 		foreach $opus_event_ref (@{$opus_track_ref}) {
 			my @opus_event = @{$opus_event_ref};
 			$ticks_so_far += $opus_event[1];
-			if ($opus_event[0] eq 'note_on') {
-				my $cha = $opus_event[2];  # 4.4
-				my $pitch = $opus_event[3];
-				my $new_event_ref = ['note', $ticks_so_far, 0,
-				 $cha, $pitch, $opus_event[4]];
-				my $key = $cha*128 + $pitch;
-				push @{$chapitch2note_on_events{$key}}, $new_event_ref;
-			} elsif ($opus_event[0] eq 'note_off') {
+			if ($opus_event[0] eq 'note_off'
+			 or ($opus_event[0] eq 'note_on' and $opus_event[4]==0)) { # YY
 				my $cha = $opus_event[2];
 				my $pitch = $opus_event[3];
 				my $key = $cha*128 + $pitch;
@@ -125,14 +119,31 @@ sub opus2score {  my ($ticks, @opus_tracks) = @_;
 				} else {
 					_warn("note_off without a note_on, cha=$cha pitch=$pitch")
 				}
+			} elsif ($opus_event[0] eq 'note_on') {
+				my $cha = $opus_event[2];  # 4.4
+				my $pitch = $opus_event[3];
+				my $new_event_ref = ['note', $ticks_so_far, 0,
+				 $cha, $pitch, $opus_event[4]];
+				my $key = $cha*128 + $pitch;
+				push @{$chapitch2note_on_events{$key}}, $new_event_ref;
 			} else {
 				$opus_event[1] = $ticks_so_far;
 				push @score_track, \@opus_event;
 			}
 		}
+		# check for unterminated notes, see: ~/lua/lib/MIDI.lua
+		while (my ($k1,$v1) = each %chapitch2note_on_events) {
+			foreach my $new_e_ref (@{$v1}) {
+				${$new_e_ref}[2] = $ticks_so_far - ${$new_e_ref}[1];
+				push @score_track, $new_e_ref;
+				warn("opus2score: note_on with no note_off cha="
+				 . ${$new_e_ref}[3] . ' pitch='
+				 . ${$new_e_ref}[4] . "; adding note_off at end\n");
+			}
+		}
 		push @score, \@score_track;
 	}
-	# should check for unterminated notes ?
+
 	return @score;
 }
 

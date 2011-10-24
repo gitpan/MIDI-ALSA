@@ -12,10 +12,10 @@ use Term::ReadKey;
 use Time::HiRes;
 use bytes;
 
-my $Version      = '1.1'; # -t -b work; -v -p introduced
-my $VersionDate  = '8may2011';
+my $Version      = '1.2'; # -b defaults to 0 beats
+my $VersionDate  = '11sep2011';
 my $Tempo        = 120;   # beats per minute
-my $BarLength    = 4;     # beats per bar
+my $BarLength    = 0;     # beats per bar
 my $Volume       = 100;   # MIDI velocity 0..127
 my $Debug        = 0;
 my $Quiet        = 0;     # no display; for use in background, and in scripts
@@ -242,7 +242,7 @@ sub display_keystrokes { my $arg = $_[$[];
 	my $s = " t=Tempo  b=Barlength  <spacebar>=";
 	if ($Paused) { $s .= "Play"; } else { $s .= "Pause"; }
 	$s .= "  v=Volume  q=Quit" ;
-	if ($arg eq 'quit') { $s = ''; }
+	if ($arg eq 'quit') { $s = ''; gotoxy(1,4); puts_30c("Quit"); }
 	gotoxy(1, $CursorRow+1); puts_clr($s); gotoxy(1,$CursorRow);
 }
 
@@ -375,7 +375,7 @@ The default is 120.
 
 The Bar length will be set;
 the bell will sound every 3 beats in this example
-The default is 4.
+The default is 0, which means every beat clicks and there are no bells.
 
 =item I<-v 80>
 

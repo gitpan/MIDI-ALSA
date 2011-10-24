@@ -18,8 +18,8 @@ eval 'require Term::Clui'; if ($@) { die
 	"you'll need to install the Term::Clui module from www.cpan.org\n";
 }
 my $CurrentX; my $CurrentY;
-my $Version      = '4.8';   # drumkit offer z,x=metronome
-my $VersionDate  = '20jun2011';
+my $Version      = '4.9';   # Pan is controlled by mouse not falsely displayed
+my $VersionDate  = '17sep2011';
 my $Channel   = 0;
 my $Volume    = 100;
 my $Pan       = 64;
@@ -134,6 +134,7 @@ if ($KeyMap ne 'drumkit') {
 	display_channel(); display_patch(); display_transpose();
 }
 display_note(); display_volume(); display_pan();
+display_midi_controllers();   # 4.9
 if (!$Quiet) { display_keystrokes(); }
 
 if (%Cha2Xcontroller or %Cha2Ycontroller) { set_mouse_mode(); }  # 3.6
@@ -233,9 +234,9 @@ sub display_volume {
 sub display_pan {
 	if ($KeyMap eq 'drumkit') {gotoxy($MidCol,3);} else {gotoxy($MidCol,4);}
 	# if ($AutoPan{$Channel}) { puts_clr("$AutoPan{$Channel} AutoPan");
-	if ($Cha2Xcontroller{$Channel}) {
+	if ($Cha2Xcontroller{$Channel} == 10) {   # 4.9
 		puts_clr("Pan is controlled by X-mouse");
-	} elsif ($Cha2Ycontroller{$Channel}) {
+	} elsif ($Cha2Ycontroller{$Channel} == 10) {  # 4.9
 		puts_clr("Pan is controlled by Y-mouse");
 	} elsif (defined $Cha2pan{$Channel}){
 		puts_clr("Pan is $Cha2pan{$Channel}");
@@ -578,7 +579,9 @@ sub process_channel_spec { my $arg = $_[$[];
 			}
 			if     ($con eq '-0') { $Cha2Xcontroller{$Channel} = -1000;
 			} elsif ($con eq '0') { $Cha2Xcontroller{$Channel} = 1000;
-			} else { $Cha2Xcontroller{$Channel} = 0+$con;
+			} else {
+				$Cha2Xcontroller{$Channel} = 0+$con;
+				$Cha2cc[$Channel]{$con} = 'X';  # 4.9
 			}
 		} elsif ($a =~ /^y(-?\d+)/) {   # 3.6
 			my $con = $1;   # controller-number
@@ -588,7 +591,9 @@ sub process_channel_spec { my $arg = $_[$[];
 			}
 			if     ($con eq '-0') { $Cha2Ycontroller{$Channel} = -1000;
 			} elsif ($con eq '0') { $Cha2Ycontroller{$Channel} = 1000;
-			} else { $Cha2Ycontroller{$Channel} = 0+$con;
+			} else {
+				$Cha2Ycontroller{$Channel} = 0+$con;
+				$Cha2cc[$Channel]{$con} = 'Y';  # 4.9
 			}
 		} elsif ($i == 1 and length $a) { $Cha2patch{$Channel} = 0+$a;
 		} elsif ($i == 2 and length $a) { $Cha2pan{$Channel} = 0+$a;

@@ -10,7 +10,7 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.09';
+$VERSION = '1.10';
 # 20100624 1.09 $maximum_nports increased from 4 to 64
 # 20100605 1.08 examples include midikbd, midiecho and midiclick
 # 20110430 1.07 reposition free() in xs_status
@@ -126,25 +126,25 @@ sub connectfrom { my ($myport, $src_client, $src_port) = @_;
 	if (!defined $src_port and $src_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
 		$src_client = 0+$1; $src_port = 0+$2;
 	}
-    return &xs_connectfrom($myport, $src_client, $src_port);
+    return &xs_connectfrom($myport, $src_client, $src_port || 0);
 }
 sub connectto { my ($myport, $dest_client, $dest_port) = @_;
 	if (!defined $dest_port and $dest_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
 		$dest_client = 0+$1; $dest_port = 0+$2;
 	}
-    return &xs_connectto($myport, $dest_client, $dest_port);
+    return &xs_connectto($myport, $dest_client, $dest_port || 0);
 }
 sub disconnectfrom { my ($myport, $src_client, $src_port) = @_;
 	if (!defined $src_port and $src_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
 		$src_client = 0+$1; $src_port = 0+$2;
 	}
-    return &xs_disconnectfrom($myport, $src_client, $src_port);
+    return &xs_disconnectfrom($myport, $src_client, $src_port || 0);
 }
 sub disconnectto { my ($myport, $dest_client, $dest_port) = @_;
 	if (!defined $dest_port and $dest_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
 		$dest_client = 0+$1; $dest_port = 0+$2;
 	}
-    return &xs_disconnectto($myport, $dest_client, $dest_port);
+    return &xs_disconnectto($myport, $dest_client, $dest_port || 0);
 }
 sub fd {
     return &xs_fd();

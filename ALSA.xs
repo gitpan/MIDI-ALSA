@@ -269,8 +269,7 @@ xs_inputpending ()
 CODE:
 {
 	dMY_CXT;
-	/* must test if seq_handle exists, to avoid segfault */
-	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
 	int rc = snd_seq_event_input_pending(MY_CXT.seq_handle, 1);
 	ST(0) = sv_2mortal(newSVnv(rc));
 	XSRETURN(1);
@@ -281,7 +280,6 @@ xs_id ()
 CODE:
 {
 	dMY_CXT;
-	/* must test if seq_handle exists, to avoid segfault */
 	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }
 	ST(0) = sv_2mortal(newSVnv(snd_seq_client_id( MY_CXT.seq_handle )));
 	XSRETURN(1);
@@ -308,6 +306,7 @@ xs_output (type, flags, tag, queue, t, src_client, src_port, dest_client, dest_p
 CODE:
 {
 	dMY_CXT;
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
     snd_seq_event_t ev;
     ev.type          = type;
     ev.flags         = flags;
@@ -372,6 +371,7 @@ xs_start ()
 CODE:
 {
 	dMY_CXT;
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
 	if (MY_CXT.queue_id < 0) {
 		ST(0) = sv_2mortal(newSVnv(0));
 		XSRETURN(1);
@@ -387,6 +387,7 @@ xs_status ()
 CODE:
 {
     dMY_CXT;
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
 	if (MY_CXT.queue_id < 0) {
 		ST(0) = sv_2mortal(newSVnv(0));
 		XSRETURN(1);
@@ -412,6 +413,7 @@ xs_stop ()
 CODE:
 {
 	dMY_CXT;
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
 	if (MY_CXT.queue_id < 0) {
 		ST(0) = sv_2mortal(newSVnv(0));
 		XSRETURN(1);

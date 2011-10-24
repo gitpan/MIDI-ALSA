@@ -11,3 +11,5 @@ examples/armid
 examples/midikbd
 examples/midiecho
 examples/midiclick
+examples/midiedit
+examples/midifade

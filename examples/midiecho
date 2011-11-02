@@ -13,14 +13,13 @@
 # We have to work in MIDI::Event, because we may (if no -N) need
 # to produce one note_off for multiple note_on's ...
 # Delays in secs more appropriate than in millisecs ?
-
-# should Reset at start
+# should Reset at start ?
 
 use Term::ReadKey;
 use bytes;
 
-my $Version      = '3.3';   # real-time w pitchWheel works from the UI
-my $VersionDate  = '28may2011';
+my $Version      = '3.7';   # fix bug in -w %pitch_delta
+my $VersionDate  = '29oct2011';
 my %Channel      = ('0',1); # MIDI channel on which the echoes will be added
 my %EchoNotes    = ();      # MIDI notes to which the echoes will be added
 my @Delays       = (300);   # incremental milliseconds of the various delays
@@ -30,7 +29,7 @@ my %pitch_wheel  = ();      # pitch_wheel, -1..+1 semitones, -4095..+4096
 my %pitch_delta  = ();      # int(PitchChange/100) added to note-pitch
 my @Patches      = ();      # the Patches that the echo-channels will be set to
 my @Softenings   = (25);    # decremental velocites (loudness) of the echoes
-my %DoEchoCC     = map { $_, 1 }  (1,5,11,64,65,66,84);
+my %DoEchoCC     = map {$_,1} (1,5,11,64,65,66,84); # Modul,Portam,Expr,Pedals
 my $Nesting = 1;    # the synth keeps count of nesting note_ons on each note
 my %nesting;        # $nesting{$cha}{$note} = number of nested output note_ons
 my @newevents;      # LoL of output events
@@ -70,7 +69,7 @@ while ($ARGV[$[] =~ /^-(\w)/) {
 	} elsif ($1 eq 'E') { shift;
 		my $a = shift; if ($a !~ /^\d[\d,]*$/) { die "bad -E arg: $a\n"; }
 		@Echoes      = split (',', $a);
-		@DoEchoCC    = split (',', $a);
+		%DoEchoCC    = map { $_, 1 } split (',', $a);
 	} elsif ($1 eq 'p') { shift;
 		my $a = shift; if ($a !~ /^[\d,]*$/)   { die "bad -p arg: $a\n"; }
 		@Patches = split (',', $a);
@@ -122,6 +121,7 @@ $#Softenings = $#Delays;
 	}
 }
 $#Echoes = $#Delays;
+@Echoes = map { 0+$_ } @Echoes;   # 3.5
 
 if (@PitchChanges) {
 	my $i=$[; while (1) {
@@ -136,46 +136,45 @@ if (@PitchChanges) {
 }
 $#PitchChanges = $#Delays;
 
-
 if ($RealTimeMode) {
 	eval 'require MIDI::ALSA'; if ($@) {
 		die "you need to install the MIDI::ALSA module from www.cpan.org\n";
 	}
 
-	$a = $OutputPort;
-	if ($a =~ /^$|^\d+(:\d)?$/)  {
+	if ($OutputPort =~ /^$|^\d+(:\d)?(,\d+(:\d)?)*$/)  {   # 3.6
 	} else { die "bad -o arg: $a\n";
-	}
-
-	if ($a =~ /^$|^\d+(:\d)?$/)  {
-		MIDI::ALSA::client( "midiecho pid=$$", 1, 1, 1 );
-	} else { die "bad -i arg: $a\n";
 	}
 	if (!$OutputPort) { $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'}; }
 	if (!$OutputPort) {
     	warn "OutputPort not specified and ALSA_OUTPUT_PORTS not set\n";
 	}
+
 	if ($Quiet and !$InputPort) {  # 3.1
 		die "in -Q Quiet-mode you must specify the -i InputPort\n";
 	}
-	{
-    	$InputPort =~ /^(\d+):?(\d*)$/;
+	if ($InputPort =~ /^$|^\d+(:\d)?(,\d+(:\d)?)*$/)  {   # 3.6
+		MIDI::ALSA::client( "midiecho pid=$$", 1, 1, 1 );
+	} else { die "bad -i arg: $a\n";
+	}
+	foreach my $cl_po (split /,/, $InputPort) {  # 3.6
+    	$cl_po =~ /^(\d+):?(\d*)$/;
     	my $cl = $1; my $po = $2 or 0;
 		if ($cl == MIDI::ALSA::id()) {
-        	die "can't connect from $InputPort, which is myself\n";
+        	die "can't connect from $cl_po, which is myself\n";
 		}
     	if (! MIDI::ALSA::connectfrom( 0, $cl, $po )) {
-        	die "can't connect from ALSA client $InputPort\n";
+        	die "can't connect from ALSA client $cl_po\n";
     	}
 	}
-	{
-    	$OutputPort =~ /^(\d+):?(\d*)$/;
+
+	foreach my $cl_po (split /,/, $OutputPort) {  # 3.6
+    	$cl_po =~ /^(\d+):?(\d*)$/;
     	my $cl = $1; my $po = $2 or 0;
 		if ($cl == MIDI::ALSA::id()) {
-        	die "can't connect to $OutputPort, which is myself\n";
+        	die "can't connect to $cl_po, which is myself\n";
 		}
     	if (! MIDI::ALSA::connectto( 1, $cl, $po )) {
-        	die "can't connect to ALSA client $OutputPort\n";
+        	die "can't connect to ALSA client $cl_po\n";
     	}
 	}
 	if (! MIDI::ALSA::start()) {
@@ -369,9 +368,17 @@ if ($RealTimeMode) {
 		if ($alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_SYSEX)     { next; }
 		# noteon, noteoff, pitch_wheel, controller, pressure:
 		my $cha  = $alsaevent[$#alsaevent][0];
-		my $note = $alsaevent[$#alsaevent][1];  # returns 0 for controller
-		if (! ($Channel{$cha} && (!%EchoNotes||$EchoNotes{"$note"}))) { next; }
-		# XXX but now controller events (note=0) have been rejected :-(
+		if (! $Channel{$cha}) { next; }
+		if ($alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_CONTROLLER()) { # 3.4
+			my $cc = $alsaevent[7][4];
+			if (!$DoEchoCC{$cc}) { next; }
+		}
+		if ($alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_NOTEON()
+		 or $alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_NOTEOFF()) {
+			my $note = $alsaevent[$#alsaevent][1];
+			if (%EchoNotes and !$EchoNotes{"$note"}) { next; }
+		}
+		my %already = (0+$cha, 1); # 3.5
 		$alsaevent[3] = 0;   # reset "queue"
 		my $cumulative_delay = 0;
 		foreach my $j ($[ .. $#Delays) {
@@ -380,8 +387,13 @@ if ($RealTimeMode) {
 			$alsaevent[4] = $secs;
 			if (defined $Echoes[$j]) {   # set the -e output-channel
 				$alsaevent[$#alsaevent][0] = $Echoes[$j];
-			 	if ($alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_PITCHBEND()) {
-					MIDI::ALSA::output(@alsaevent); next;
+			 	if ($alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_PITCHBEND()
+				 or $alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_CONTROLLER()) {
+					if (! $already{$Echoes[$j]}) {   # 3.5
+						MIDI::ALSA::output(@alsaevent);
+						$already{$Echoes[$j]} = 1;
+					}
+					next;
 				}
 			}
 			if ($alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_NOTEON()
@@ -392,8 +404,8 @@ if ($RealTimeMode) {
 					if ($quietenedvol < 1) { $quietenedvol = 1; }
 					$alsaevent[$#alsaevent][2] = $quietenedvol;
 				}
-				if ($pitch_delta{$Echoes[$j]}) {
-					$alsaevent[$#alsaevent][1]=$note+$pitch_delta{$Echoes[$j]};
+				if ($pitch_delta{$Echoes[$j]}) {  # 3.7
+					$alsaevent[$#alsaevent][1] += $pitch_delta{$Echoes[$j]};
 				}
 				my $rc = MIDI::ALSA::output(@alsaevent);
 			}
@@ -1098,6 +1110,9 @@ The port is specified as an ALSA-port;
 you can check out the available ports with the command
 I<arecordmidi -l> or I<aconnect -il>.
 
+Since Version 3.6,
+you may supply a comma-separated list of ports, e.g. B<-i 28:0,32>
+
 =item I<-o 128:0>
 
 This option puts I<midiecho> into raw-midi mode
@@ -1107,6 +1122,9 @@ I<aplaymidi -l> or I<aconnect -ol>.
 The default ouput-port
 (if only B<-i> option is present)
 is the environment variable $ALSA_OUTPUT_PORTS
+
+Since Version 3.6,
+you may supply a comma-separated list of ports, e.g. B<-o 20,128:1>
 
 =back
 

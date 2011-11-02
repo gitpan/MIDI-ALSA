@@ -7,26 +7,19 @@
 #            modify it under the same terms as Perl itself.             #
 #########################################################################
 my $Version       = '1.1';
-my $VersionDate   = '23jul2011';
+my $VersionDate   = '31oct2011';
 use open ':locale';
 
-my $Port = 0;
-my $Client = 20;
-if ($ENV{'ALSA_OUTPUT_PORTS'}) {
-	if ($ENV{'ALSA_OUTPUT_PORTS'} =~ /^(\d+):(\d+)$/) { $Client=$1 ; $Port=$2;
-	} elsif ($ENV{'ALSA_OUTPUT_PORTS'} =~ /^(\d+)$/)  { $Client = $1 ;
-	}
-}
+my $OutputPort = '';
 while ($ARGV[$[] =~ /^-([a-z])/) {
 	if ($1 eq 'v')      { shift;
 		my $n = $0; $n =~ s{^.*/([^/]+)$}{$1};
 		print "$n version $Version $VersionDate\n";
 		exit 0;
-	} elsif ($1 eq 'p') { shift;
-		if ($ARGV[$[] =~ /^(\d+):(\d+)$/) { $Client = $1 ; $Port = $2;
-		} elsif ($ARGV[$[] =~ /^(\d+)$/)  { $Client = $1 ;
+	} elsif ($1 eq 'p' or $1 eq 'o') { shift; $OutputPort = shift;
+		if ($OutputPort !~ /^\d+(:\d)?(,\d+(:\d)?)*$/)  {
+			die "bad -p arg: $OutputPort\n";
 		}
-		shift;
 	} else {
 		print "usage:\n";  my $synopsis = 0;
 		while (<DATA>) {
@@ -37,6 +30,8 @@ while ($ARGV[$[] =~ /^-([a-z])/) {
 		exit 0;
 	}
 }
+if (!$OutputPort) { $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'}; }
+if (!$OutputPort) { die "-p not specified and ALSA_OUTPUT_PORTS not set\n"; }
 
 use Data::Dumper; $Data::Dumper::Indent = 0; $Data::Dumper::Sortkeys = 1;
 eval 'require MIDI'; if ($@) {
@@ -47,7 +42,16 @@ eval 'require MIDI::ALSA'; if ($@) {
 }
 
 MIDI::ALSA::client("$0 MIDI::ALSA client", 0, 1, 1) or die "client failed";
-MIDI::ALSA::connectto(0, $Client, $Port) or die "connectto failed";
+foreach my $cl_po (split /,/, $OutputPort) {
+	$cl_po =~ /^(\d+):?(\d*)$/;
+	my $cl = $1; my $po = $2 or 0;
+	if ($cl == MIDI::ALSA::id()) {
+		die "can't connect to $cl_po, which is myself\n";
+	}
+	if (! MIDI::ALSA::connectto( 1, $cl, $po )) {
+		die "can't connect to ALSA client $cl_po\n";
+	}
+}
 MIDI::ALSA::start() or die "start failed";
 
 my @score = file2ms_score($ARGV[$[]);
@@ -214,31 +218,30 @@ sub deepcopy {
 	}
 }
 
-
-
 __END__
 
 =pod
 
 =head1 NAME
 
-apmid - example script for MIDI::ALSA; simulates aplaymidi
+apmid - rough aplaymidi work-alike, to demonstrate MIDI::ALSA
 
 =head1 SYNOPSIS
 
- apmid filename
+ apmid -p 20:0,128 filename.mid
 
 =head1 DESCRIPTION
 
-This script
+This script is a rough aplaymidi work-alike, to demonstrate MIDI::ALSA
 
 =head1 OPTIONS
 
 =over 3
 
-=item I<-d gloop>
+=item I<-p 20:0,128:0>
 
-gloops
+Plays to the ALSA clients 20 and 128;
+the default is the envronment variable ALSA_OUTPUT_PORTS
 
 =item I<-v>
 
@@ -248,6 +251,7 @@ Prints version number.
 
 =head1 CHANGES
 
+ 20111031  1.1  connects from multiple (comma-separated) ports
  20110310  1.0  first working version
 
 =head1 AUTHOR

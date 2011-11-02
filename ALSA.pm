@@ -10,7 +10,9 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.10';
+$VERSION = '1.11';
+# 20111101 1.11 add parse_address(), and call automatically from connectto() etc
+# 20101024 1.10 crash-proof all xs_ subs if called before client exists
 # 20100624 1.09 $maximum_nports increased from 4 to 64
 # 20100605 1.08 examples include midikbd, midiecho and midiclick
 # 20110430 1.07 reposition free() in xs_status
@@ -22,14 +24,13 @@ $VERSION = '1.10';
 # 20110211 1.01 first released version
 
 # gives a -w warning, but I'm afraid $VERSION .= ''; would confuse CPAN
-# use DynaLoader 'DYNALOADER';
 require Exporter;
 require DynaLoader;
 @ISA = qw(Exporter DynaLoader);
 @EXPORT = ();
 @EXPORT_OK = qw(client connectfrom connectto fd id
- input inputpending output start status stop syncoutput
- noteevent noteonevent noteoffevent pgmchangeevent pitchbendevent
+ input inputpending output start status stop syncoutput noteevent
+ noteonevent noteoffevent parse_address pgmchangeevent pitchbendevent
  controllerevent chanpress alsa2scoreevent scoreevent2alsa);
 @EXPORT_CONSTS = ();
 %EXPORT_TAGS = (ALL => [@EXPORT,@EXPORT_OK], CONSTS => [@EXPORT_CONSTS]);
@@ -122,27 +123,31 @@ sub client {
     return &xs_client($name, $ninputports, $noutputports, $createqueue);
 }
 
+sub parse_address { my ($port_name) = @_;
+    return &xs_parse_address($port_name);
+}
 sub connectfrom { my ($myport, $src_client, $src_port) = @_;
-	if (!defined $src_port and $src_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
-		$src_client = 0+$1; $src_port = 0+$2;
+	if ($src_client =~ /[A-Za-z]/ || !defined $src_port) { # 1.03 ?
+		($src_client, $src_port) = parse_address("$src_client"); # 1.11
 	}
     return &xs_connectfrom($myport, $src_client, $src_port || 0);
 }
 sub connectto { my ($myport, $dest_client, $dest_port) = @_;
-	if (!defined $dest_port and $dest_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
-		$dest_client = 0+$1; $dest_port = 0+$2;
+	if ($dest_client =~ /[A-Za-z]/ || !defined $dest_port) { # 1.03 ?
+		# http://alsa-project.org/alsa-doc/alsa-lib/group___seq_middle.html
+		($dest_client, $dest_port) = parse_address("$dest_client"); # 1.11
 	}
     return &xs_connectto($myport, $dest_client, $dest_port || 0);
 }
 sub disconnectfrom { my ($myport, $src_client, $src_port) = @_;
-	if (!defined $src_port and $src_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
-		$src_client = 0+$1; $src_port = 0+$2;
+	if ($src_client =~ /[A-Za-z]/ || !defined $src_port) { # 1.03 ?
+		($src_client, $src_port) = parse_address("$src_client"); # 1.11
 	}
     return &xs_disconnectfrom($myport, $src_client, $src_port || 0);
 }
 sub disconnectto { my ($myport, $dest_client, $dest_port) = @_;
-	if (!defined $dest_port and $dest_client =~ /^(\d+):(\d+)$/) { # 1.03 ?
-		$dest_client = 0+$1; $dest_port = 0+$2;
+	if ($dest_client =~ /[A-Za-z]/ || !defined $dest_port) { # 1.03 ?
+		($dest_client, $dest_port) = parse_address("$dest_client"); # 1.11
 	}
     return &xs_disconnectto($myport, $dest_client, $dest_port || 0);
 }
@@ -494,11 +499,6 @@ but all the functions and constants can be exported, e.g.:
  use MIDI::ALSA(client, connectfrom, connectto, id, input, output);
  use MIDI::ALSA(':CONSTS');
 
-The event-type constants, beginning with SND_SEQ_,
-are available not as scalars, but as module subroutines with empty prototypes.
-They must therefore be used without a dollar-sign e.g.:
- if ($event[0] == MIDI::ALSA::SND_SEQ_EVENT_PORT_UNSUBSCRIBED) { ...
-
 =head1 FUNCTIONS
 
 Functions based on those in I<alsaseq.py>:
@@ -513,7 +513,8 @@ Functions to interface with I<MIDI-Perl>:
 alsa2scoreevent(), scoreevent2alsa()
 
 Functions to get the current ALSA status:
-listclients(), listnumports(), listconnectedto(), listconnectedfrom()
+listclients(), listnumports(), listconnectedto(), listconnectedfrom(),
+parse_address()
 
 =over 3
 
@@ -525,25 +526,43 @@ if the quantity requested is between 1 and 64 for each.
 If I<createqueue> = true, it creates a queue for stamping the arrival time
 of incoming events and scheduling future start times of outgoing events.
 
+For full ALSA functionality, the I<$name>
+should contain only letters, digits, underscores or spaces,
+and should contain at least one letter.
+
 Unlike in the I<alsaseq.py> Python module, it returns success or failure.
 
 =item connectfrom( $inputport, $src_client, $src_port )
 
 Connect from I<src_client:src_port> to I<inputport>. Each input port can
-connect from more than one client. The I<input()> function will receive events
+connect from more than one client. The I<input>() function will receive events
 from any intput port and any of the clients connected to each of them.
 Events from each client can be distinguised by their source field.
 
 Unlike in the I<alsaseq.py> Python module, it returns success or failure.
 
+Since version 1.11, and unlike in the I<alsaseq.py> Python module,
+if $src_client contains a letter or $src_port is undefined,
+then I<parse_address($src_client)> automatically gets invoked.
+This allows you to refer to the clients by name, for example
+connectfrom($inputport,'Virtual:1') will connect from
+port 1 of the 'Virtual Raw MIDI' client.
+
 =item connectto( $outputport, $dest_client, $dest_port )
 
-Connect outputport to I<dest_client:dest_port>. Each output port can be
-Connected to more than one client. Events sent to an output port using
-the I<output>()  funtion will be sent to all clients that are connected to
-it using this function.
+Connect I<outputport> to I<dest_client:dest_port>.
+Each output port can be Connected to more than one client.
+Events sent to an output port using the I<output>()  funtion
+will be sent to all clients that are connected to it using this function.
 
 Unlike in the I<alsaseq.py> Python module, it returns success or failure.
+
+Since version 1.11, and unlike in the I<alsaseq.py> Python module,
+if $dest_client contains a letter or $dest_port is undefined,
+then I<parse_address($dest_client)> automatically gets invoked.
+This allows you to refer to the clients by name, for example
+connectto($outputport,'Virtual:1') will connect to
+port 1 of the 'Virtual Raw MIDI' client.
 
 =item disconnectfrom( $inputport, $src_client, $src_port )
 
@@ -551,11 +570,25 @@ Disconnect the connection
 from the remote I<src_client:src_port> to my I<inputport>.
 Returns success or failure.
 
+Since version 1.11, and unlike in the I<alsaseq.py> Python module,
+if $dest_client contains a letter or $dest_port is undefined,
+then I<parse_address($src_client)> automatically gets invoked.
+This allows you to refer to the clients by name, for example
+disconnectfrom($inputport,'Virtual:1') will disconnect from
+port 1 of the 'Virtual Raw MIDI' client.
+
 =item disconnectto( $outputport, $dest_client, $dest_port )
 
 Disconnect the connection
 from my I<outputport> to the remote I<dest_client:dest_port>.
 Returns success or failure.
+
+Since version 1.11, and unlike in the I<alsaseq.py> Python module,
+if $dest_client contains a letter or $dest_port is undefined,
+then I<parse_address($dest_client)> automatically gets invoked.
+This allows you to refer to the clients by name, for example
+disconnectto($outputport,'Virtual:1') will disconnect to
+port 1 of the 'Virtual Raw MIDI' client.
 
 =item fd()
 
@@ -762,17 +795,74 @@ so if a client is running 4 ports they will be numbered 0..3
 
 Returns a list of arrayrefs, each to a three-element array
 ( $outputport, $dest_client, $dest_port )
-exactly as might have been passed to connectto(),
-or which could be passed to disconnectto().
+exactly as might have been passed to I<connectto>(),
+or which could be passed to I<disconnectto>().
 
 =item listconnectedfrom()
 
 Returns a list of arrayrefs, each to a three-element array
 ( $inputport, $src_client, $src_port )
-exactly as might have been passed to connectfrom(),
-or which could be passed to disconnectfrom().
+exactly as might have been passed to I<connectfrom>(),
+or which could be passed to I<disconnectfrom>().
+
+=item parse_address( $client_name )
+
+Given a string, this function returns a two-integer array
+( $client_number, $port_number )
+as might be needed by I<connectto>() or I<connectfrom>().
+For example, even if I<client>() has not been called,
+"24" will return 24,0 and "25:1" will return 25,1
+
+If the local client is running, then parse_address() 
+also looks up names. For example, if C<aconnect -oil>
+reveals a I<timidity> client:
+
+ client 128: 'TiMidity' [type=user]
+
+then parse_address("TiM") will return 128,0
+and parse_address("TiMi:1") will return 128,1
+because it finds the first client with a start-of-string
+case-sensitive match to the given name.
+parse_address() is called automatically by I<connectto>(),
+I<connectfrom>(), I<disconnectto>() and I<disconnectfrom>() if they are
+called with the third argument undefined.
+parse_address() was introduced in version 1.11 and is not present in
+the alsaseq.py Python module.
 
 =back
+
+=head1 CONSTANTS
+
+The event-type constants, beginning with SND_SEQ_,
+are available not as scalars, but as module subroutines with empty prototypes.
+They must therefore be used without a dollar-sign e.g.:
+
+ if ($event[0] == MIDI::ALSA::SND_SEQ_EVENT_PORT_UNSUBSCRIBED) { ...
+
+and sometimes even need an explicit () at the end, e.g.:
+MIDI::ALSA::SND_SEQ_EVENT_PORT_UNSUBSCRIBED()
+
+SND_SEQ_EVENT_BOUNCE SND_SEQ_EVENT_CHANPRESS SND_SEQ_EVENT_CLIENT_CHANGE
+SND_SEQ_EVENT_CLIENT_EXIT SND_SEQ_EVENT_CLIENT_START SND_SEQ_EVENT_CLOCK
+SND_SEQ_EVENT_CONTINUE SND_SEQ_EVENT_CONTROL14 SND_SEQ_EVENT_CONTROLLER
+SND_SEQ_EVENT_ECHO SND_SEQ_EVENT_KEYPRESS SND_SEQ_EVENT_KEYSIGN
+SND_SEQ_EVENT_NONE SND_SEQ_EVENT_NONREGPARAM SND_SEQ_EVENT_NOTE
+SND_SEQ_EVENT_NOTEOFF SND_SEQ_EVENT_NOTEON SND_SEQ_EVENT_OSS
+SND_SEQ_EVENT_PGMCHANGE SND_SEQ_EVENT_PITCHBEND SND_SEQ_EVENT_PORT_CHANGE
+SND_SEQ_EVENT_PORT_EXIT SND_SEQ_EVENT_PORT_START SND_SEQ_EVENT_PORT_SUBSCRIBED
+SND_SEQ_EVENT_PORT_UNSUBSCRIBED SND_SEQ_EVENT_QFRAME SND_SEQ_EVENT_QUEUE_SKEW
+SND_SEQ_EVENT_REGPARAM SND_SEQ_EVENT_RESET SND_SEQ_EVENT_RESULT
+SND_SEQ_EVENT_SENSING SND_SEQ_EVENT_SETPOS_TICK SND_SEQ_EVENT_SETPOS_TIME
+SND_SEQ_EVENT_SONGPOS SND_SEQ_EVENT_SONGSEL SND_SEQ_EVENT_START
+SND_SEQ_EVENT_STOP SND_SEQ_EVENT_SYNC_POS SND_SEQ_EVENT_SYSEX
+SND_SEQ_EVENT_SYSTEM SND_SEQ_EVENT_TEMPO SND_SEQ_EVENT_TICK
+SND_SEQ_EVENT_TIMESIGN SND_SEQ_EVENT_TUNE_REQUEST SND_SEQ_EVENT_USR0
+SND_SEQ_EVENT_USR1 SND_SEQ_EVENT_USR2 SND_SEQ_EVENT_USR3
+SND_SEQ_EVENT_USR4 SND_SEQ_EVENT_USR5 SND_SEQ_EVENT_USR6
+SND_SEQ_EVENT_USR7 SND_SEQ_EVENT_USR8 SND_SEQ_EVENT_USR9
+SND_SEQ_EVENT_USR_VAR0 SND_SEQ_EVENT_USR_VAR1 SND_SEQ_EVENT_USR_VAR2
+SND_SEQ_EVENT_USR_VAR3 SND_SEQ_EVENT_USR_VAR4 SND_SEQ_QUEUE_DIRECT
+SND_SEQ_TIME_STAMP_REAL VERSION
 
 =head1 DOWNLOAD
 

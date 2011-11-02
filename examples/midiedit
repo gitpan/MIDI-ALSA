@@ -14,7 +14,7 @@
 # Edit: Q=quantise e.g. Q180 ?  but conflicts with Quit, therefore P=Pulse ?
 # Ranges:   120000,175000P180   or a dialogue ?
 #   From ? (choice of start, the set marks, here)
-#   To ?   (choice of any of the above avter the From point, or End)
+#   To ?   (choice of any of the above after the From point, or End)
 #   Do ?   (Delete, or Find and Replace, or Pulse
 
 eval 'require MIDI'; if ($@) {
@@ -25,8 +25,8 @@ eval 'require Term::Clui'; if ($@) {
    die "you'll need to install the Term::Clui module from www.cpan.org\n";
 }
 import Term::Clui;
-my $Version = '1.9';  # Phaser Depth and Poly On displayed correctly
-my $VersionDate = '22oct2011';
+my $Version = '2.5';  # column-titles better reflect the event-types
+my $VersionDate = '29oct2011';
 
 my $UseCurses = 1;
 my $TopKeystrokesLine;   # set by display_keystrokes
@@ -35,14 +35,16 @@ my $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'};
 while ($ARGV[$[] =~ /^-(\w)/) {
 	if ($1 eq 'd')      { $UseCurses = 0; shift;
 	} elsif ($1 eq 'o') { shift; $OutputPort = shift;
-		if ($OutputPort !~ /^\d+(:\d)?$/)  { die "bad -o arg: $a\n"; }
+		if ($OutputPort !~ /^\d+(:\d)?(,\d+(:\d)?)*$/)  {
+			die "bad -o arg: $a\n";
+		}
 	} else {
 my $n = $0; $n =~ s#^.*/([^/]+)$#$1#;
 print <<EOT; exit 0;
 Usage:
-	$n filename.mid       # new specialised Curses and ALSA mode
-	$n -d filename.mid    # older dump and text-editor mode
-	perldoc $n            # read the real Documentation !
+    $n filename.mid       # new specialised Curses and ALSA mode
+    $n -d filename.mid    # older dump and text-editor mode
+    perldoc $n            # read the real Documentation !
 Version $Version   $VersionDate   http://www.pjb.com.au/midi
 EOT
 	}
@@ -115,23 +117,37 @@ initscr(); cbreak(); noecho(); nonl(); clear();
 # http://docstore.mik.ua/orelly/perl/cookbook/ch15_13.htm  BUT:
 keypad(stdscr(),1);
 $SIG{'INT'} = sub {exit 0;}; $SIG{'TERM'} = sub {exit 0;};
-eval 'sub END {endwin();}';  # mustn't create call to endwin in nonCurses mode
 add_to_history();
 my $FileIsChanged = 0;
-display_screen($Now, $Ievent, @Track);
 if (! MIDI::ALSA::client( "midiedit pid=$$", 0, 1, 1 )) {
 	die "can't start up the ALSA client\n";
 }
+my $ID = MIDI::ALSA::id().":0";
+display_screen($Now, $Ievent, @Track);
 
-my ($AlsaOutputClient, $AlsaOutputPort) = split /:/, $OutputPort;
-if (! MIDI::ALSA::connectto( 0, 0+$AlsaOutputClient, 0+$AlsaOutputPort )) {
-	die "can't connectto client $AlsaOutputClient\n";
+# 2.0 shouldn't attempt to connect if $OutputPort is undefined or "0"
+if (! defined $OutputPort) {
+	display_message(
+	  "no -o option, and no ALSA_OUTPUT_PORTS environment variable");
+} elsif ($OutputPort eq '0') {
+	display_message("not connecting to any ALSA client");
+} else {
+    foreach my $cl_po (split /,/, $OutputPort) {  # 2.4
+        $cl_po =~ /^(\d+):?(\d*)$/;
+        my $cl = $1; my $po = $2 or 0;
+        if ($cl == MIDI::ALSA::id()) {
+            display_message("can't connect to $cl_po, which is myself");
+        }
+        if (! MIDI::ALSA::connectto( 1, $cl, $po )) {
+            display_message("can't connect to ALSA client $cl_po");
+        }
+    }
 }
 if (! MIDI::ALSA::start()) {
 	die "can't start the ALSA client queue\n";
 }
-# in case the user types q in the middle of a note...
-eval 'sub END {all_sounds_off();}';
+# mustn't create call to endwin in nonCurses mode
+eval 'sub END {all_sounds_off(); endwin();}';
 while (1) {  # the loop
 	my $c = getch();
 	if ($c == ERR())   {
@@ -191,6 +207,7 @@ while (1) {  # the loop
 		} else       { $Paused = 1; timeout(-1);
 		}
 		display_screen();
+	} elsif ($c eq 'z')         { all_sounds_off();
 	} elsif ($c == KEY_UP() or $c eq 'k')    {
 		if ($Ievent > $[) {
 			$Ievent -= 1; $Now = $Track[$Ievent][$[+1] + 1;
@@ -203,8 +220,10 @@ while (1) {  # the loop
 			display_screen(); play_current_event();
 			if (! $Paused) { set_timeout_for_next_note(); }
 		}
-	} elsif ($c == KEY_LEFT())  { time_travel(-1000);  display_screen();
-	} elsif ($c == KEY_RIGHT()) { time_travel(1000);   display_screen();
+	} elsif ($c == KEY_LEFT() or $c eq 'K')  {
+		time_travel(-1000);  display_screen();
+	} elsif ($c == KEY_RIGHT() or $c eq 'J') {
+		time_travel(1000);   display_screen();
 	} elsif ($c == KEY_PPAGE()) { time_travel(-10000); display_screen();
 	} elsif ($c == KEY_NPAGE()) { time_travel(10000);  display_screen();
 	} elsif ($c == KEY_HOME())  {
@@ -224,7 +243,7 @@ while (1) {  # the loop
 # B=Bar b=beat I=insert O=open
 # m=mark g=goto
 # D=Delete p=paste y=yank
-# u=undo ^R=redo /=find ?=reverse_find
+# u=undo ^R=redo /=find ?=reversefind
 # Up/Down=+-1event,  Left/Right=+-1sec,  PageUp/PageDown=+-10sec
 # +=gotonext (asks beat,Bar,note,end) or numbers mean seconds.
 # -=gotoprevious (asks beat,Bar,note,start) or numbers mean seconds.
@@ -256,11 +275,11 @@ sub add_to_history {
 	$FileIsChanged = 1;
 	#debug("add_to_h2: Ihistory=$Ihistory #History=$#History History=@History");
 }
-sub all_sounds_off {
+sub all_sounds_off {   # 2.2
+	# we could keep track of the channels which have been sent notes so far...
 	foreach my $c (0..15) {
 		MIDI::ALSA::output(MIDI::ALSA::controllerevent($c,120,0));
 	}
-	MIDI::ALSA::stop();
 }
 
 sub cc2str { my $m = $_[$[];
@@ -351,9 +370,13 @@ sub display_events {
 	}
 	attrset(A_BOLD());
 	addl($i_now, 0, event2str($Ievent));
-	if ($Editing)     { addl($i_now,51, " EDITING at $Now");  # 1.4
-	} elsif ($Paused) { addl($i_now,51, " PAUSED at $Now");
-	} else            { addl($i_now,51, ' PLAYING');
+	my $notestr = '';  # 2.1
+	if ($Track[$Ievent][$[] eq 'note') {
+		$notestr = q{ } . note2str(@{$Track[$Ievent]});
+	}
+	if ($Editing)     { addl($i_now,49, "  EDITING at $Now");   # 1.4
+	} elsif ($Paused) { addl($i_now,49, "$notestr PAUSED at $Now"); # 2.1
+	} else            { addl($i_now,49, "  PLAYING $notestr");  # 2.1
 	}
 	attrset(A_NORMAL());
 	refresh();
@@ -376,23 +399,33 @@ sub display_keystrokes {
 			'B=Bar b=beat e=edit i=insert  +=incrementaltimes m=mark g=goto');
 		}
 		addl($LINES-3,2,
-		  'k/Up/j/Down=+-1event,  Left/Right=+-1sec,  PageUp/PageDown=+-10sec');
+		 'k/Up/j/Down=+-1event,  Left/Right=+-1sec,  PageUp/PageDown=+-10sec');
 	}
 	# p=paste y=yank ? dd ? 4dd ? 4j etc ?
 	addl($LINES-2,2,
-	  'D=Delete u=undo ^R=redo  /=find ?=reverse_find n=findnext N=findprevious ');
+	'D=Delete u=undo ^R=redo  /=find ?=reversefind n=findnext N=findprevious ');
 	if ($Paused) { # if event is editable, then t,d,c,n,v  and <space>=play
 		addl($LINES-1,2,
-		  '<space>=play  Home=start End=end  w=write q=quit');
+		  '<space>=play  Home=start End=end  z=allsoundsoff  w=write q=quit');
 	} else {
 		addl($LINES-1,2,
-		  '<space>=pause Home=start End=end  w=write q=quit');
+		  '<space>=pause Home=start End=end  z=allsoundsoff  w=write q=quit');
 	}
 	refresh();
 }
 
 sub display_screen {
-	addl(0,5,'     Event  Ticks  Dura  Chan  Note   Vol');
+	my $event_type = $Track[$Ievent][$[];
+	if ($event_type eq 'note') {
+		addl(0,5,'     Event  Ticks  Dura  Chan  Note   Vol');
+	} elsif ($event_type eq 'control_change') {
+		addl(0,5,'     Event  Ticks  Chan  Contrlr Value');
+	} elsif ($event_type eq 'patch_change') {
+		addl(0,5,'     Event  Ticks  Chan  Patch');
+	} else {
+		addl(0,5,'     Event  Ticks  Data');
+	}
+	move(0,$COLS-length($ID)-1); addstr($ID);
 	move(1,1); hline($ACS_HLINE,$COLS-2);
 	move($LINES-5,1); hline($ACS_HLINE,$COLS-2);
 	display_keystrokes();
@@ -650,6 +683,8 @@ sub event2str { my $ie = $_[$[];
 			return sprintf(' %14s %6s %5d %5d %5d %5d', @event);
 		} elsif (5 == scalar @event) {
 			return sprintf(' %14s %6s %5d %5d %5d', @event);
+		} elsif ($event[$[] eq 'pitch_wheel_change') {
+			return sprintf('%s %5s %4d %6d', @event);
 		} elsif (4 == scalar @event) {
 			return sprintf(' %14s %6s %5d %5d', @event);
 		} elsif (3 == scalar @event) {
@@ -985,7 +1020,6 @@ sub un_do {
 	#debug("un_do2: Ihistory=$Ihistory #History=$#History History=@History");
 }
 
-
 #------------ MIDI infrastructure from midisox_pl ------------
 
 # ----------------------- infrastructure --------------------
@@ -1184,6 +1218,15 @@ sub file2ms_score {
     my @opus = file2opus($_[$[]);
     my @ms = to_millisecs(@opus);
     my @score = opus2score(@ms);
+	# must merge the tracks of a format-2 file; could perhaps even
+	# extend the @event to indicate which Track it originated in...
+	my $itrack = $#score; while ($itrack > ($[+1.5)) {
+		foreach my $event_ref (@{$score[$itrack]}) {
+			push @{$score[$[+1]}, $event_ref; # push them onto track 1
+		}
+		$itrack -= 1;
+		$#score = $itrack;  # and jettison the last track
+	}
     return @score;
 }
 
@@ -1291,8 +1334,8 @@ In the Curses mode, which is the default, I<midiedit>
 edits a MIDI file with a purpose-designed user-interface
 which re-uses some keystrokes inspired by B<vi>:
 for example, i=insert m=mark g=goto k/Up/j/Down=+-1event
-u=undo ^R=redo  /=find ?=reverse_find
-n=findnext N=findprevious w=write q=quit.
+u=undo ^R=redo  /=find ?=reversefind n=findnext N=findprevious w=write q=quit,
+plus a few others, e.g.: e=edit_event D=delete_event z=all_sounds_off.
 
 As in B<mplayer>, the spacebar toggles between Play and Pause,
 the Left and Right arrow keys move by 1 second,
@@ -1320,11 +1363,18 @@ and leaves the duration of the whole file unchanged.
 This user-interface is likely to evolve over the next months,
 as I use it more.
 
+You can specify your choice of synth with a B<-o 128:0> option,
+or else with the I<ALSA_OUTPUT_PORTS> environment variable.
+The special value B<-o 0> silences the output
+(e.g. you might want to edit something while listening to something else).
+Since Version 2.4, you may supply a comma-separated list of ports, e.g.
+B<-o 20,128:1>
+
 As well as the B<MIDI-Perl> CPAN module,
 this mode also uses the B<Curses> module for the user-interface,
 and the B<MIDI::ALSA> module to play the file to your synth.
 
-=head1 EDIT A DUMP MODE
+=head1 DUMP MODE
 
 In the older, low-tech B<-d> mode, I<midiedit>
 edits a MIDI file in the human-readable text-format
@@ -1348,6 +1398,12 @@ so you have to keep track of matching note_ons and note_offs.
 
 =head1 CHANGES
 
+ 2.5, 20111029, column-titles better reflect the event-types
+ 2.4, 20111028, OutputPort can be a comma-separated list
+ 2.3, 20111027, merges multiple tracks; z=all_sounds_off
+ 2.2, 20111027, entering PAUSED mode causes all_sounds_off
+ 2.1, 20111027, displays note-string in main window
+ 2.0, 20111027, doesn't try to connect if $OutputPort undefined or "0"
  1.9, 20111022, Phaser Depth and Poly On displayed correctly
  1.8, 20111021, displays notes with ~ and _ correctly
  1.7, 20110926, handles non-millisec-tick files correctly

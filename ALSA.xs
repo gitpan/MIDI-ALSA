@@ -109,6 +109,24 @@ CODE:
 }
 
 int
+xs_parse_address(port_name)
+	const char * port_name
+CODE:
+{	/* 1.11 */
+	dMY_CXT;
+	snd_seq_addr_t *addr;
+	addr = alloca(sizeof(snd_seq_addr_t));
+	int rc = snd_seq_parse_address(MY_CXT.seq_handle, addr, port_name);
+	if (rc < 0) {
+		fprintf(stderr, "Invalid port %s - %s\n", port_name, snd_strerror(rc));
+		XSRETURN(0);
+	}
+	ST(0) = sv_2mortal(newSVnv(addr->client));
+	ST(1) = sv_2mortal(newSVnv(addr->port));
+	XSRETURN(2);
+}
+
+int
 xs_connectfrom (myport, src_client, src_port)
 	int myport
 	int src_client

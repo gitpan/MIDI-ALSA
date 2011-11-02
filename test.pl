@@ -11,7 +11,7 @@ use MIDI::ALSA qw(:ALL);
 # use Class::MakeMethods::Utility::Ref qw( ref_clone ref_compare );
 use Time::HiRes;
 use Data::Dumper;
-use Test::Simple tests => 53;
+use Test::Simple tests => 55;
 
 my @virmidi = virmidi_clients_and_files();
 if (@virmidi < 4) {
@@ -21,11 +21,21 @@ if (@virmidi < 4) {
 $rc = MIDI::ALSA::inputpending();
 ok(! defined $rc, "inputpending() with no client returned undef");
 
-$rc = MIDI::ALSA::client('test.pl',2,2,1);
-ok($rc, "client('test.pl',2,2,1)");
+my ($cl,$po) = MIDI::ALSA::parse_address('97:3');
+ok(($cl==97)&&($po==3), "parse_address('97:3') with no client returned 97,3");
+
+my $my_name = "testpl pid=$$";
+$rc = MIDI::ALSA::client($my_name,2,2,1);
+ok($rc, "client('$my_name',2,2,1)");
 
 my ($seconds, $microseconds) = Time::HiRes::gettimeofday;
 my $start_time = $seconds + 1.0E-6 * $microseconds;
+
+$id = MIDI::ALSA::id();
+ok($id > 0, "id() returns $id");
+
+($cl,$po) = MIDI::ALSA::parse_address('testp');
+ok($cl == $id, "parse_address('testp') returns $id,$po");
 
 if (@virmidi >= 2 ) {
 	$rc = MIDI::ALSA::connectfrom(1,$virmidi[0],0);
@@ -53,11 +63,8 @@ ok($rc, 'start()');
 $fd = MIDI::ALSA::fd();
 ok($fd > 0, 'fd()');
 
-$id = MIDI::ALSA::id();
-ok($id > 0, "id() returns $id");
-
 my %num2name = MIDI::ALSA::listclients();
-ok($num2name{$id} eq 'test.pl', "listclients()");
+ok($num2name{$id} eq $my_name, "listclients()");
 
 my %num2nports = MIDI::ALSA::listnumports();
 ok($num2nports{$id} == 4, "listnumports()");
@@ -229,11 +236,14 @@ if (@virmidi <2) {
 $rc = MIDI::ALSA::disconnectto(2,$virmidi[2],0);
 ok($rc, "disconnectto(2,$virmidi[2],0)");
 
-$rc = MIDI::ALSA::connectto(2,$id,1);
-ok($rc, "connectto(2,$id,1) connected to myself");
+$rc = MIDI::ALSA::connectto(2,"$my_name:1");
+ok($rc, "connectto(2,'$my_name:1') connected to myself by name");
+#system 'aconnect -oil';
 @correct = (11, 1, 0, 1, 2.5, [$id,2], [$id,1], [0, 0, 0, 0, 0, 99] );
 $rc =  MIDI::ALSA::output(@correct);
 @alsaevent  = MIDI::ALSA::input();
+#warn("alsaevent=".Dumper(@alsaevent)."\n");
+#warn("correct  =".Dumper(@correct)."\n");
 $latency = int(0.5 + 1000 * ($alsaevent[4]-$correct[4]));
 $alsaevent[4] = $correct[4];
 ok(Dumper(@alsaevent) eq Dumper(@correct), "received an event from myself");

@@ -12,8 +12,8 @@ use Term::ReadKey;
 use Time::HiRes;
 use bytes;
 
-my $Version      = '1.2'; # -b defaults to 0 beats
-my $VersionDate  = '11sep2011';
+my $Version      = '1.3'; # OutputPort, InputPort can be comma-separated lists
+my $VersionDate  = '28oct2011';
 my $Tempo        = 120;   # beats per minute
 my $BarLength    = 0;     # beats per bar
 my $Volume       = 100;   # MIDI velocity 0..127
@@ -35,8 +35,8 @@ eval 'require MIDI::ALSA'; if ($@) {
 while ($ARGV[$[] =~ /^-(\w)/) {
 	if ($1 eq 'V')      { shift;
 		my $n = $0; $n =~ s{^.*/([^/]+)$}{$1};
-        print "$n version $Version $VersionDate\n";
-        exit 0;
+		print "$n version $Version $VersionDate\n";
+		exit 0;
 	} elsif ($1 eq 't')      { shift;
 		my $a = shift; if ($a !~ /^\d[\d.]*$/) { die "bad -t arg: $a\n"; }
 		$Tempo     = 0 + $a;
@@ -73,27 +73,26 @@ if ($RealTimeMode) {
 		die "you need to install the MIDI::ALSA module from www.cpan.org\n";
 	}
 
-	$a = $OutputPort;
-	if ($a =~ /^$|^\d+(:\d)?$/)  {
-	} else { die "bad -o arg: $a\n";
+	if ($OutputPort =~ /^$|^\d+(:\d)?(,\d+(:\d)?)*$/)  {
+	} else { die "bad -o arg: $OutputPort\n";
 	}
 	if (! MIDI::ALSA::client( "midiclick pid=$$", 0, 1, 1 )) {
-       	die "can't create the  MIDI::ALSA::client\n";
+	   	die "can't create the  MIDI::ALSA::client\n";
 	}
 
 	if (!$OutputPort) { $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'}; }
 	if (!$OutputPort) {
-    	warn "OutputPort not specified and ALSA_OUTPUT_PORTS not set\n";
+		warn "OutputPort not specified and ALSA_OUTPUT_PORTS not set\n";
 	}
-	{
-    	$OutputPort =~ /^(\d+):?(\d*)$/;
-    	my $cl = $1; my $po = $2 or 0;
+	foreach my $cl_po (split /,/, $OutputPort) {  # 3.6
+		$cl_po =~ /^(\d+):?(\d*)$/;
+		my $cl = $1; my $po = $2 or 0;
 		if ($cl == MIDI::ALSA::id()) {
-        	die "can't connect to $OutputPort, which is myself\n";
+			die "can't connect to $cl_po, which is myself\n";
 		}
-    	if (! MIDI::ALSA::connectto( 1, $cl, $po )) {
-        	die "can't connect to ALSA client $OutputPort\n";
-    	}
+		if (! MIDI::ALSA::connectto( 1, $cl, $po )) {
+			die "can't connect to ALSA client $cl_po\n";
+		}
 	}
 	if (! MIDI::ALSA::start()) {
 		die "can't start the queue of the ALSA client\n";
@@ -136,7 +135,7 @@ if ($RealTimeMode) {
 						print STDOUT "\$Tempo  = $ch;\n";
 						kill 'HUP', $parent_pid;
 					}
-    				display_tempo(); display_keystrokes();
+					display_tempo(); display_keystrokes();
 				} elsif ($c eq 'b') {
 					my $d = get_int('bar length (in beats) ?');
 					if (defined $d) {
@@ -144,7 +143,7 @@ if ($RealTimeMode) {
 						print STDOUT "\$BarLength  = $d;\n";
 						kill 'HUP', $parent_pid;
 					}
-    				display_tempo(); display_keystrokes();
+					display_tempo(); display_keystrokes();
 				} elsif ($c eq 'v') {
 					my $d = get_int('volume ?');
 					if (defined $d) {
@@ -152,12 +151,12 @@ if ($RealTimeMode) {
 						print STDOUT "\$Volume  = $d;\n";
 						kill 'HUP', $parent_pid;
 					}
-    				display_volume(); display_keystrokes();
+					display_volume(); display_keystrokes();
 				} elsif ($c eq ' ') {
 					if ($Paused) { $Paused=0; } else { $Paused = 1; }
 					print STDOUT "\$Paused  = $Paused;\n";
 					kill 'HUP', $parent_pid;
-    				display_paused(); display_keystrokes();
+					display_paused(); display_keystrokes();
 				}
 				# every second or so, the child should display_alsa()
 				# print STDOUT "$cmd\n"; kill 'HUP', $parent_pid;
@@ -210,14 +209,14 @@ sub display_alsa {
 	} else {            $s .= "not connected to anything";
 	}
 	gotoxy(1,2); puts_clr($s);
-    gotoxy(1,$CursorRow);
+	gotoxy(1,$CursorRow);
 }
 
 sub display_tempo {
 	return if $Quiet;
 	gotoxy(1,3);       puts_30c("Tempo $Tempo beats/min");
 	gotoxy($MidCol,3); puts_clr("BarLength $BarLength beats");
-    gotoxy(1,$CursorRow);
+	gotoxy(1,$CursorRow);
 }
 
 sub display_paused {
@@ -228,13 +227,13 @@ sub display_paused {
 	} else {
 		puts_30c("Playing");
 	}
-    gotoxy(1,$CursorRow);
+	gotoxy(1,$CursorRow);
 }
 
 sub display_volume {
 	return if $Quiet;
 	gotoxy($MidCol,4); puts_clr("Volume $Volume");
-    gotoxy(1,$CursorRow);
+	gotoxy(1,$CursorRow);
 }
 
 sub display_keystrokes { my $arg = $_[$[];

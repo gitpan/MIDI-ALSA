@@ -18,8 +18,8 @@ eval 'require Term::Clui'; if ($@) { die
 	"you'll need to install the Term::Clui module from www.cpan.org\n";
 }
 my $CurrentX; my $CurrentY;
-my $Version      = '4.9';   # Pan is controlled by mouse not falsely displayed
-my $VersionDate  = '17sep2011';
+my $Version      = '5.0';   # OutputPort can be a comma-separated list
+my $VersionDate  = '28oct2011';
 my $Channel   = 0;
 my $Volume    = 100;
 my $Pan       = 64;
@@ -33,7 +33,7 @@ my %KeyMaps   = (   # 4.0
 my %Cha2patch;
 my %Cha2pan;
 my $LastTra;   # the last (transposed) note that's been played.
-my $AlsaPort;
+my $OutputPort;
 my @Synopsis; my %Keystrokes;
 my $CursorRow = 6;
 # vt100 globals
@@ -60,9 +60,8 @@ while ($ARGV[$[] =~ /^-([CPa-z])([adhpw]?)/) {
 		print "$n version $Version $VersionDate\n";
 		exit 0;
 	} elsif ($opt eq 'd' or $opt eq 'o') { shift; my $f = shift;
-		if ($f =~ /^\d+(:\d+)?$/)  { $AlsaPort = $f;
-		}
-	} elsif ($opt eq 'p') { shift; $AlsaPort = shift;
+		if ($f =~ /^\d+(:\d+)(,\d+(:\d)?)?$/)  { $OutputPort = $f; }
+	} elsif ($opt eq 'p') { shift; $OutputPort = shift;
 	} elsif ($opt eq 'C') { shift;
 		warn "warning: -C option is now deprecated; see perldoc midikbd\n";
 		while (my $next_arg = shift) { process_channel_spec($next_arg); }
@@ -108,15 +107,18 @@ while (<DATA>) {
 my %Char2note = char2note($KeyMap);
 
 MIDI::ALSA::client( "midikbd pid=$$", 0, 1, 0 );
-if (!$AlsaPort) { $AlsaPort = $ENV{'ALSA_OUTPUT_PORTS'}; }
-if (!$AlsaPort) {
-	warn "AlsaPort not specified and ALSA_OUTPUT_PORTS not set\n";
-	}
-{
-	$AlsaPort =~ /^(\d+):?(\d*)$/;
+if (!$OutputPort) { $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'}; }
+if (!$OutputPort) {
+	warn "OutputPort not specified and ALSA_OUTPUT_PORTS not set\n";
+}
+foreach my $cl_po (split /,/, $OutputPort) {  # 5.0
+	$cl_po =~ /^(\d+):?(\d*)$/;
 	my $cl = $1; my $po = $2 or 0;
+	if ($cl == MIDI::ALSA::id()) {
+		die "can't connect to $cl_po, which is myself\n";
+	}
 	if (! MIDI::ALSA::connectto( 0, $cl, $po )) {
-		die "can't connect to $AlsaPort\n";
+		die "can't connect to ALSA client $cl_po\n";
 	}
 }
 
@@ -927,6 +929,8 @@ This option is superseded by the I<ChannelSpec> arguments.
 
 =head1 CHANGES
 
+ 20111028  5.0  OutputPort can be a comma-separated list
+ 20110917  4.9  Pan controlled by mouse is not falsely displayed
  20110620  4.8  drumkit offers z,x = metronome
  20110509  4.7  quit from drumkit mode cleans up screen properly
  20110414  4.6  keystroke A changes ALSA connections

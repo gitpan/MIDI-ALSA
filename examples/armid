@@ -6,28 +6,20 @@
 #     This script is free software; you can redistribute it and/or      #
 #            modify it under the same terms as Perl itself.             #
 #########################################################################
-my $Version       = '1.0';
-my $VersionDate   = '10mar2011';
+my $Version       = '1.1';
+my $VersionDate   = '31oct2011';
 use open ':locale';
 
-$Port = 0;
-$Client = 32;
-if ($ENV{'ALSA_INPUT_PORTS'}) {
-	if ($ENV{'ALSA_INPUT_PORTS'} =~ /^(\d+):(\d+)$/) { $Client=$1 ; $Port=$2;
-	} elsif ($ENV{'ALSA_INPUT_PORTS'} =~ /^(\d+)$/)  { $Client = $1 ;
-	}
-}
-
+my $InputPort = '';
 while ($ARGV[$[] =~ /^-([a-z])/) {
 	if ($1 eq 'v')      { shift;
 		my $n = $0; $n =~ s{^.*/([^/]+)$}{$1};
 		print "$n version $Version $VersionDate\n";
 		exit 0;
-	} elsif ($1 eq 'p') { shift;
-		if ($ARGV[$[] =~ /^(\d+):(\d+)$/) { $Client = $1 ; $Port = $2;
-		} elsif ($ARGV[$[] =~ /^(\d+)$/)  { $Client = $1 ;
-		}
-		shift;
+	} elsif ($1 eq 'p' or $1 eq 'i') { shift; $InputPort = shift;
+        if ($InputPort !~ /^\d+(:\d)?(,\d+(:\d)?)*$/)  {
+            die "bad -p arg: $InputPort\n";
+        }
 	} else {
 		print "usage:\n";  my $synopsis = 0;
 		while (<DATA>) {
@@ -38,6 +30,8 @@ while ($ARGV[$[] =~ /^-([a-z])/) {
 		exit 0;
 	}
 }
+if (!$InputPort) { $InputPort = $ENV{'ALSA_INPUT_PORTS'}; }
+if (!$InputPort) { die "-p not specified and ALSA_INPUT_PORTS not set\n"; }
 
 use Data::Dumper; $Data::Dumper::Indent = 0; $Data::Dumper::Sortkeys = 1;
 eval 'require MIDI'; if ($@) {
@@ -48,37 +42,38 @@ eval 'require MIDI::ALSA'; if ($@) {
 }
 
 MIDI::ALSA::client("$0 MIDI::ALSA client", 1, 0, 1) or die "client failed";
-MIDI::ALSA::connectfrom(0, $Client, $Port) or die "connectfrom failed";
+foreach my $cl_po (split /,/, $InputPort) {
+    $cl_po =~ /^(\d+):?(\d*)$/;
+    my $cl = $1; my $po = $2 or 0;
+    if ($cl == MIDI::ALSA::id()) {
+        die "can't connect from $cl_po, which is myself\n";
+    }
+    if (! MIDI::ALSA::connectfrom( 0, $cl, $po )) {
+        die "can't connect from ALSA client $cl_po\n";
+    }
+}
 MIDI::ALSA::start() or die "start failed";
 
 my @score = (1000, [['set_tempo',0,1000000],]);
 sub discon {
-	warn "Client=$Client Port=$Port\n";
-	MIDI::ALSA::disconnectfrom(0,$Client,$Port) or warn "disconnectfrom failed";
-	warn "Writing to file $ARGV[$[]\n";
+	warn " Writing to file $ARGV[$[]\n";
 	score2file($ARGV[$[], @score);
 	exit 0;
 };
-$SIG{INT} = \&discon;  # ALAS, these handlers don't get called, it
-$SIG{QUIT} = \&discon; # Segfaults. But aconnect -d 32 129 works...
+$SIG{INT} = \&discon;
+$SIG{QUIT} = \&discon;
 
 while (1) {
 	# must exit the loop on SIGINT ...
 	@alsaevent = MIDI::ALSA::input();
-	if (!@alsaevent) {
-		warn "interrupted\n"; last;
-	}
-	warn "alsaevent=@alsaevent\n";
+	if (!@alsaevent) { warn "interrupted\n"; last; }
 	if ($alsaevent[0]==MIDI::ALSA::SND_SEQ_EVENT_PORT_UNSUBSCRIBED()) {
 		warn "unsubscribed\n"; last;
 	}
 	my @scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
-	if (@scoreevent) {
-		warn "scoreevent=@scoreevent\n";
-		push @{$score[1]}, \@scoreevent;
-	}
+	if (@scoreevent) { push @{$score[1]}, \@scoreevent; }
 }
-warn "writing to file $ARGV[$[]\n";
+warn " Writing to file $ARGV[$[]\n";
 score2file($ARGV[$[], @score);
 exit 0;
 
@@ -186,19 +181,20 @@ armid - rough arecordmidi work-alike, to demonstrate MIDI::ALSA
 
 =head1 SYNOPSIS
 
- does whatever
+ armid -p 28 out.mid
 
 =head1 DESCRIPTION
 
-This script
+This script is a rough arecordmidi work-alike, to demonstrate MIDI::ALSA
 
 =head1 OPTIONS
 
 =over 3
 
-=item I<-d gloop>
+=item I<-p 28:0,32:0>
 
-gloops
+Records from the ALSA clients 28 and 32;
+the default is the envronment variable ALSA_INPUT_PORTS
 
 =item I<-v>
 
@@ -208,6 +204,7 @@ Prints version number.
 
 =head1 CHANGES
 
+ 20111031  1.1  connects from multiple (comma-separated) ports
  20110310  1.0  first working version
 
 =head1 AUTHOR

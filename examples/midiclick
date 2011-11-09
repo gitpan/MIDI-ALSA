@@ -12,8 +12,8 @@ use Term::ReadKey;
 use Time::HiRes;
 use bytes;
 
-my $Version      = '1.3'; # OutputPort, InputPort can be comma-separated lists
-my $VersionDate  = '28oct2011';
+my $Version      = '1.4'; # use the new MIDI-ALSA 1.11 to handle portnames
+my $VersionDate  = '03nov2011';
 my $Tempo        = 120;   # beats per minute
 my $BarLength    = 0;     # beats per bar
 my $Volume       = 100;   # MIDI velocity 0..127
@@ -73,9 +73,9 @@ if ($RealTimeMode) {
 		die "you need to install the MIDI::ALSA module from www.cpan.org\n";
 	}
 
-	if ($OutputPort =~ /^$|^\d+(:\d)?(,\d+(:\d)?)*$/)  {
-	} else { die "bad -o arg: $OutputPort\n";
-	}
+	#if ($OutputPort =~ /^$|^\d+(:\d)?(,\d+(:\d)?)*$/)  {
+	#} else { die "bad -o arg: $OutputPort\n";
+	#}
 	if (! MIDI::ALSA::client( "midiclick pid=$$", 0, 1, 1 )) {
 	   	die "can't create the  MIDI::ALSA::client\n";
 	}
@@ -85,12 +85,12 @@ if ($RealTimeMode) {
 		warn "OutputPort not specified and ALSA_OUTPUT_PORTS not set\n";
 	}
 	foreach my $cl_po (split /,/, $OutputPort) {  # 3.6
-		$cl_po =~ /^(\d+):?(\d*)$/;
-		my $cl = $1; my $po = $2 or 0;
-		if ($cl == MIDI::ALSA::id()) {
-			die "can't connect to $cl_po, which is myself\n";
-		}
-		if (! MIDI::ALSA::connectto( 1, $cl, $po )) {
+		#$cl_po =~ /^(\d+):?(\d*)$/;
+		#my $cl = $1; my $po = $2 or 0;
+		#if ($cl == MIDI::ALSA::id()) {
+		#	die "can't connect to $cl_po, which is myself\n";
+		#}
+		if (! MIDI::ALSA::connectto( 1, $cl_po )) {  # 1.4
 			die "can't connect to ALSA client $cl_po\n";
 		}
 	}
@@ -342,7 +342,7 @@ midiclick - generates a metronome click-track on MIDI channel 9
  midiclick -p               # starts up in Paused mode
  xterm -geometry 80x7-1+1 -exec 'midiclick -t 165 -b 5' &
 
- ~> midiclick -o 128:0 -t 144 -b 5 -p
+ ~> midiclick -o TiMidity -t 144 -b 5 -p
  ALSA client 129                midiclick pid=2157
  Output port 129:1 is connected to 128:0
  Tempo 144 beats/min            BarLength 5 beats
@@ -387,7 +387,7 @@ This option starts I<midiclick> in Paused state;
 you can then start it Playing with spacebar.
 This option is ignored in -Q Quiet mode.
 
-=item I<-o 128:0>
+=item I<-o 128:0> or I<-o TiMidity>
 
 This option sets the ouput-port to which the midi output will be sent.
 You can check out the available ports with the command

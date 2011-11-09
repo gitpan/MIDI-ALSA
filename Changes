@@ -1,3 +1,4 @@
+20111108 1.12 output() does not broadcast if destination is set
 20111101 1.11 add parse_address(), and call automatically from connectto() etc
 20111024 1.10 crash-proof all xs_ subs if called before client exists
 20110624 1.09 $maximum_nports increased from 4 to 64

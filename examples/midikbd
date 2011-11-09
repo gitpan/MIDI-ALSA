@@ -18,8 +18,8 @@ eval 'require Term::Clui'; if ($@) { die
 	"you'll need to install the Term::Clui module from www.cpan.org\n";
 }
 my $CurrentX; my $CurrentY;
-my $Version      = '5.0';   # OutputPort can be a comma-separated list
-my $VersionDate  = '28oct2011';
+my $Version      = '5.1';   # use the new MIDI-ALSA 1.11 to handle portnames
+my $VersionDate  = '03nov2011';
 my $Channel   = 0;
 my $Volume    = 100;
 my $Pan       = 64;
@@ -59,8 +59,8 @@ while ($ARGV[$[] =~ /^-([CPa-z])([adhpw]?)/) {
 		my $n = $0; $n =~ s{^.*/([^/]+)$}{$1};
 		print "$n version $Version $VersionDate\n";
 		exit 0;
-	} elsif ($opt eq 'd' or $opt eq 'o') { shift; my $f = shift;
-		if ($f =~ /^\d+(:\d+)(,\d+(:\d)?)?$/)  { $OutputPort = $f; }
+	} elsif ($opt eq 'd' or $opt eq 'o') { shift; $OutputPort = shift;
+		# if ($f =~ /^\d+(:\d+)(,\d+(:\d)?)?$/)  { $OutputPort = $f; }
 	} elsif ($opt eq 'p') { shift; $OutputPort = shift;
 	} elsif ($opt eq 'C') { shift;
 		warn "warning: -C option is now deprecated; see perldoc midikbd\n";
@@ -112,12 +112,12 @@ if (!$OutputPort) {
 	warn "OutputPort not specified and ALSA_OUTPUT_PORTS not set\n";
 }
 foreach my $cl_po (split /,/, $OutputPort) {  # 5.0
-	$cl_po =~ /^(\d+):?(\d*)$/;
-	my $cl = $1; my $po = $2 or 0;
-	if ($cl == MIDI::ALSA::id()) {
-		die "can't connect to $cl_po, which is myself\n";
-	}
-	if (! MIDI::ALSA::connectto( 0, $cl, $po )) {
+	#$cl_po =~ /^(\d+):?(\d*)$/;
+	#my $cl = $1; my $po = $2 or 0;
+	#if ($cl == MIDI::ALSA::id()) {
+	#	die "can't connect to $cl_po, which is myself\n";
+	#}
+	if (! MIDI::ALSA::connectto( 0, $cl_po )) {
 		die "can't connect to ALSA client $cl_po\n";
 	}
 }
@@ -929,6 +929,7 @@ This option is superseded by the I<ChannelSpec> arguments.
 
 =head1 CHANGES
 
+ 20111103  5.1  use the new MIDI-ALSA 1.11 to handle portnames
  20111028  5.0  OutputPort can be a comma-separated list
  20110917  4.9  Pan controlled by mouse is not falsely displayed
  20110620  4.8  drumkit offers z,x = metronome

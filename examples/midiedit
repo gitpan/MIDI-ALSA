@@ -25,8 +25,8 @@ eval 'require Term::Clui'; if ($@) {
    die "you'll need to install the Term::Clui module from www.cpan.org\n";
 }
 import Term::Clui;
-my $Version = '2.5';  # column-titles better reflect the event-types
-my $VersionDate = '29oct2011';
+my $Version = '2.7';  # edit_event dialogue updated as changes are made
+my $VersionDate = '07nov2011';
 
 my $UseCurses = 1;
 my $TopKeystrokesLine;   # set by display_keystrokes
@@ -35,9 +35,9 @@ my $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'};
 while ($ARGV[$[] =~ /^-(\w)/) {
 	if ($1 eq 'd')      { $UseCurses = 0; shift;
 	} elsif ($1 eq 'o') { shift; $OutputPort = shift;
-		if ($OutputPort !~ /^\d+(:\d)?(,\d+(:\d)?)*$/)  {
-			die "bad -o arg: $a\n";
-		}
+		#if ($OutputPort !~ /^\d+(:\d)?(,\d+(:\d)?)*$/)  {
+		#	die "bad -o arg: $a\n";
+		#}
 	} else {
 my $n = $0; $n =~ s#^.*/([^/]+)$#$1#;
 print <<EOT; exit 0;
@@ -133,12 +133,12 @@ if (! defined $OutputPort) {
 	display_message("not connecting to any ALSA client");
 } else {
     foreach my $cl_po (split /,/, $OutputPort) {  # 2.4
-        $cl_po =~ /^(\d+):?(\d*)$/;
-        my $cl = $1; my $po = $2 or 0;
-        if ($cl == MIDI::ALSA::id()) {
-            display_message("can't connect to $cl_po, which is myself");
-        }
-        if (! MIDI::ALSA::connectto( 1, $cl, $po )) {
+        #$cl_po =~ /^(\d+):?(\d*)$/;
+        #my $cl = $1; my $po = $2 or 0;
+        #if ($cl == MIDI::ALSA::id()) {
+        #    display_message("can't connect to $cl_po, which is myself");
+        #}
+        if (! MIDI::ALSA::connectto( 1, $cl_po )) {   # 
             display_message("can't connect to ALSA client $cl_po");
         }
     }
@@ -531,6 +531,7 @@ sub edit_event {
 					if ($changed) { add_to_history(); } $Editing = 0; return;
 				}
 				# display_events(); move($prompt_y,$prompt_x); refresh();
+				@event = @{$Track[$Ievent]};   # 2.7
 				display_this_event(@event);
 			}
 		} elsif ($event[$[] eq 'control_change') {
@@ -596,6 +597,7 @@ sub edit_event {
 				} else {
 					if ($changed) { add_to_history(); } $Editing = 0; return;
 				}
+				@event = @{$Track[$Ievent]};   # 2.7
 				display_this_event(@event);
 			}
 		} elsif ($event[$[] =~ /^marker|^text|^sysex_f0/) {
@@ -632,6 +634,7 @@ sub edit_event {
 					if ($changed) { add_to_history(); } $Editing = 0; return;
 				}
 				# display_events(); move($prompt_y,$prompt_x); refresh();
+				@event = @{$Track[$Ievent]};   # 2.7
 				display_this_event(@event);
 			}
 		} else {
@@ -666,6 +669,7 @@ sub edit_event {
 					if ($changed) { add_to_history(); } $Editing = 0; return;
 				}
 				# display_events(); move($prompt_y,$prompt_x); refresh();
+				@event = @{$Track[$Ievent]};   # 2.7
 				display_this_event(@event);
 			}
 		}
@@ -1398,6 +1402,8 @@ so you have to keep track of matching note_ons and note_offs.
 
 =head1 CHANGES
 
+ 2.7, 20111107, edit_event dialogue updated as changes are made
+ 2.6, 20111103, use the new MIDI-ALSA 1.11 to handle portnames
  2.5, 20111029, column-titles better reflect the event-types
  2.4, 20111028, OutputPort can be a comma-separated list
  2.3, 20111027, merges multiple tracks; z=all_sounds_off

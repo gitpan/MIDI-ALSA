@@ -18,8 +18,8 @@
 use Term::ReadKey;
 use bytes;
 
-my $Version      = '3.7';   # fix bug in -w %pitch_delta
-my $VersionDate  = '29oct2011';
+my $Version      = '3.8';   # use the new MIDI-ALSA 1.11 to handle portnames
+my $VersionDate  = '03nov2011';
 my %Channel      = ('0',1); # MIDI channel on which the echoes will be added
 my %EchoNotes    = ();      # MIDI notes to which the echoes will be added
 my @Delays       = (300);   # incremental milliseconds of the various delays
@@ -141,9 +141,9 @@ if ($RealTimeMode) {
 		die "you need to install the MIDI::ALSA module from www.cpan.org\n";
 	}
 
-	if ($OutputPort =~ /^$|^\d+(:\d)?(,\d+(:\d)?)*$/)  {   # 3.6
-	} else { die "bad -o arg: $a\n";
-	}
+	#if ($OutputPort =~ /^$|^\d+(:\d)?(,\d+(:\d)?)*$/)  {   # 3.6
+	#} else { die "bad -o arg: $a\n";
+	#}
 	if (!$OutputPort) { $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'}; }
 	if (!$OutputPort) {
     	warn "OutputPort not specified and ALSA_OUTPUT_PORTS not set\n";
@@ -152,28 +152,28 @@ if ($RealTimeMode) {
 	if ($Quiet and !$InputPort) {  # 3.1
 		die "in -Q Quiet-mode you must specify the -i InputPort\n";
 	}
-	if ($InputPort =~ /^$|^\d+(:\d)?(,\d+(:\d)?)*$/)  {   # 3.6
-		MIDI::ALSA::client( "midiecho pid=$$", 1, 1, 1 );
-	} else { die "bad -i arg: $a\n";
-	}
+	#if ($InputPort =~ /^$|^\d+(:\d)?(,\d+(:\d)?)*$/)  {   # 3.6
+	MIDI::ALSA::client( "midiecho pid=$$", 1, 1, 1 );
+	#} else { die "bad -i arg: $a\n";
+	#}
 	foreach my $cl_po (split /,/, $InputPort) {  # 3.6
-    	$cl_po =~ /^(\d+):?(\d*)$/;
-    	my $cl = $1; my $po = $2 or 0;
-		if ($cl == MIDI::ALSA::id()) {
-        	die "can't connect from $cl_po, which is myself\n";
-		}
-    	if (! MIDI::ALSA::connectfrom( 0, $cl, $po )) {
+    	#$cl_po =~ /^(\d+):?(\d*)$/;
+    	#my $cl = $1; my $po = $2 or 0;
+		#if ($cl == MIDI::ALSA::id()) {
+        #	die "can't connect from $cl_po, which is myself\n";
+		#}
+    	if (! MIDI::ALSA::connectfrom( 0, $cl_po )) {
         	die "can't connect from ALSA client $cl_po\n";
     	}
 	}
 
 	foreach my $cl_po (split /,/, $OutputPort) {  # 3.6
-    	$cl_po =~ /^(\d+):?(\d*)$/;
-    	my $cl = $1; my $po = $2 or 0;
-		if ($cl == MIDI::ALSA::id()) {
-        	die "can't connect to $cl_po, which is myself\n";
-		}
-    	if (! MIDI::ALSA::connectto( 1, $cl, $po )) {
+    	#$cl_po =~ /^(\d+):?(\d*)$/;
+    	#my $cl = $1; my $po = $2 or 0;
+		#if ($cl == MIDI::ALSA::id()) {
+        #	die "can't connect to $cl_po, which is myself\n";
+		#}
+    	if (! MIDI::ALSA::connectto( 1, $cl_po )) {
         	die "can't connect to ALSA client $cl_po\n";
     	}
 	}
@@ -1100,7 +1100,7 @@ and switches the note off if receives even just one note_off command.
 So if your synth seems to be chopping off lots of notes,
 you should try invoking midiecho with the -S option.
 
-=item I<-i 32:0>
+=item I<-i 32:0> or I<-i ProKeys>
 
 This option puts I<midiecho> into raw-midi
 (or real-time, or midi-on-the-wire)
@@ -1113,7 +1113,7 @@ I<arecordmidi -l> or I<aconnect -il>.
 Since Version 3.6,
 you may supply a comma-separated list of ports, e.g. B<-i 28:0,32>
 
-=item I<-o 128:0>
+=item I<-o 128:0> or I<-o TiMidity>
 
 This option puts I<midiecho> into raw-midi mode
 and sets the ouput-port to which the midi output will be sent.
@@ -1124,7 +1124,7 @@ The default ouput-port
 is the environment variable $ALSA_OUTPUT_PORTS
 
 Since Version 3.6,
-you may supply a comma-separated list of ports, e.g. B<-o 20,128:1>
+you may supply a comma-separated list of ports, e.g. B<-o Roland,128:1>
 
 =back
 

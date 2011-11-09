@@ -191,31 +191,31 @@ if (@virmidi < 4) {
 	ok(1, 'skipping note_on event output');
 	ok(1, 'skipping note_off event output');
 } else {
-	open(my $oup, '<', $virmidi[3])
-	 || die "can't open $virmidi[3]: $!\n";  # client 25
+	open(my $oup, '<', $virmidi[3]) || die "can't open $virmidi[3]: $!\n";
+	my $cl_num = $virmidi[2];  # client 25
 
 	print("# outputting a patch_change event...\n");
-	@correct = (11, 1, 0, 1, 0.5, [24,0], [$id,1], [0, 0, 0, 0, 0, 99] );
-	$rc =  MIDI::ALSA::output(@correct);
+	my @alsaevent = (11, 1,0,1, 0.5,[$id,0],[$cl_num,0],[0, 0, 0, 0, 0, 99]);
+	$rc =  MIDI::ALSA::output(@alsaevent);
 	read $oup, $bytes, 2;
 	ok($bytes eq "\xC0\x63", 'patch_change event detected');
 
 	print("# outputting a control_change event...\n");
-	@correct = (10, 1, 0, 1, 1.5, [24,0], [$id,1], [2, 0, 0, 0,10,103] );
-	$rc =  MIDI::ALSA::output(@correct);
+	@alsaevent = (10, 1,0,1, 1.5,[$id,0],[$cl_num,0], [2, 0, 0, 0,10,103]);
+	$rc =  MIDI::ALSA::output(@alsaevent);
 	read $oup, $bytes, 3;
 	ok($bytes eq "\xB2\x0A\x67", 'control_change event detected');
 
 	print("# outputting a note_on event...\n");
-	@correct = ( 6, 1, 0, 1, 2.0, [ 24, 0 ], [ $id, 1 ], [ 0, 60, 101, 0, 0 ] );
-	$rc =  MIDI::ALSA::output(@correct);
+	@alsaevent = (6, 1,0,1, 2.0, [$id,1], [$cl_num,0], [0,60,101,0,0]);
+	$rc =  MIDI::ALSA::output(@alsaevent);
 	read $oup, $bytes, 3;
 	#printf "bytes=%vx\n", $bytes;
 	ok($bytes eq "\x90\x3C\x65", 'note_on event detected');
 
 	print("# outputting a note_off event...\n");
-	@correct = ( 7, 1, 0, 1, 2.5, [ 24, 0 ], [ $id, 1 ], [ 0, 60, 101, 0, 0 ] );
-	$rc =  MIDI::ALSA::output(@correct);
+	@alsaevent = (7, 1,0,1, 2.5, [$id,1], [$cl_num,0], [0, 60, 101, 0, 0]);
+	$rc =  MIDI::ALSA::output(@alsaevent);
 	read $oup, $bytes, 3;
 	#printf "bytes=%vx\n", $bytes;
 	ok($bytes eq "\x80\x3C\x65", 'note_off event detected');

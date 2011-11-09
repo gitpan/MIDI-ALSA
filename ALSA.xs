@@ -378,7 +378,9 @@ CODE:
     else if ( ev.source.port > MY_CXT.lastoutputport )
         snd_seq_ev_set_source(&ev, MY_CXT.lastoutputport );
     /* Use subscribed ports, except if ECHO event */
-    if ( ev.type != SND_SEQ_EVENT_ECHO ) snd_seq_ev_set_subs(&ev);
+    /* if ( ev.type != SND_SEQ_EVENT_ECHO ) snd_seq_ev_set_subs(&ev); */
+	/* Use subscribed ports, except if ECHO event, or dest_client>0 1.12 */
+	if (ev.type!=SND_SEQ_EVENT_ECHO && !dest_client) snd_seq_ev_set_subs(&ev);
     int rc = snd_seq_event_output_direct( MY_CXT.seq_handle, &ev );
 	ST(0) = sv_2mortal(newSVnv(rc));
 	XSRETURN(1);

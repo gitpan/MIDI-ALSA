@@ -12,8 +12,8 @@
 my $ColsPerFader = 6;
 # Curses interface from midiedit, midi stuff from midikbd
 
-my $Version = '1.3';
-my $VersionDate = '28oct2011';
+my $Version = '1.4';
+my $VersionDate = '03nov2011';
 
 my $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'};
 
@@ -31,9 +31,9 @@ import MIDI::ALSA;
 while ($ARGV[$[] =~ /^-(\w)/) {
 	if ($1 eq 'd')      { $UseCurses = 0; shift;
 	} elsif ($1 eq 'o') { shift; $OutputPort = shift;
-		if ($OutputPort !~ /^\d+(:\d)?(,\d+(:\d)?)*$/)  {
-			die "bad -o arg: $OutputPort\n";
-		}
+		#if ($OutputPort !~ /^\d+(:\d)?(,\d+(:\d)?)*$/)  {
+		#	die "bad -o arg: $OutputPort\n";
+		#}
 	} else {
 print <<EOT; exit 0;
 Usage:
@@ -55,12 +55,12 @@ if (! MIDI::ALSA::client( "midifade pid=$$", 0, 1, 1 )) {
 	die "can't start up the ALSA client\n";
 }
 foreach my $cl_po (split /,/, $OutputPort) {  # 1.3
-    $cl_po =~ /^(\d+):?(\d*)$/;
-    my $cl = $1; my $po = $2 or 0;
-    if ($cl == MIDI::ALSA::id()) {
-        die "can't connect to $cl_po, which is myself\n";
-    }
-    if (! MIDI::ALSA::connectto( 1, $cl, $po )) {
+    #$cl_po =~ /^(\d+):?(\d*)$/;
+    #my $cl = $1; my $po = $2 or 0;
+    #if ($cl == MIDI::ALSA::id()) {
+    #    die "can't connect to $cl_po, which is myself\n";
+    #}
+    if (! MIDI::ALSA::connectto( 1, $cl_po )) {  # 1.4
         die "can't connect to ALSA client $cl_po\n";
     }
 }
@@ -490,6 +490,7 @@ The B<v> bit is optional; its default value is 64.
 
 =head1 CHANGES
 
+ 1.4, 20111103, use the new MIDI-ALSA 1.11 to handle portnames
  1.3, 20111028, OutputPort can be a comma-separated list
  1.2, 20111027, add-new-fader dialogue allows 3-digit controller-nums
  1.1, 20111023, much irrelevant code eliminated; q asks y/n first

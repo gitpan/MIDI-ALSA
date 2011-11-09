@@ -6,8 +6,8 @@
 #     This script is free software; you can redistribute it and/or      #
 #            modify it under the same terms as Perl itself.             #
 #########################################################################
-my $Version       = '1.1';
-my $VersionDate   = '31oct2011';
+my $Version       = '1.2';
+my $VersionDate   = '03nov2011';
 use open ':locale';
 
 my $OutputPort = '';
@@ -17,9 +17,6 @@ while ($ARGV[$[] =~ /^-([a-z])/) {
 		print "$n version $Version $VersionDate\n";
 		exit 0;
 	} elsif ($1 eq 'p' or $1 eq 'o') { shift; $OutputPort = shift;
-		if ($OutputPort !~ /^\d+(:\d)?(,\d+(:\d)?)*$/)  {
-			die "bad -p arg: $OutputPort\n";
-		}
 	} else {
 		print "usage:\n";  my $synopsis = 0;
 		while (<DATA>) {
@@ -43,24 +40,51 @@ eval 'require MIDI::ALSA'; if ($@) {
 
 MIDI::ALSA::client("$0 MIDI::ALSA client", 0, 1, 1) or die "client failed";
 foreach my $cl_po (split /,/, $OutputPort) {
-	$cl_po =~ /^(\d+):?(\d*)$/;
-	my $cl = $1; my $po = $2 or 0;
-	if ($cl == MIDI::ALSA::id()) {
-		die "can't connect to $cl_po, which is myself\n";
-	}
-	if (! MIDI::ALSA::connectto( 1, $cl, $po )) {
+	if (! MIDI::ALSA::connectto( 1, $cl_po )) {
 		die "can't connect to ALSA client $cl_po\n";
 	}
 }
 MIDI::ALSA::start() or die "start failed";
 
 my @score = file2ms_score($ARGV[$[]);
-foreach my $is (1..$#score) {
+# look for FF 09 events {'raw_meta_event', dtime, command(0-255), raw}
+# actually they appear as {'text_event_09', dtime, text}
+# and connect to their synths, in case they weren't specified in $OutputPort
+foreach my $is ($[+1..$#score) {
 	foreach my $ev_ref (@{$score[$is]}) {
 		my @event = @{$ev_ref};
-		# warn "event=@event\n";
+		if ($event[$[] eq 'text_event_09') {
+			my $text = $event[$[+2];
+			my ($cl,$po) = MIDI::ALSA::parse_address($text);
+			if (! $cl) {
+				warn "FF 09 event: can't find client $text\n";
+			} else {
+				# cheap handling of pre-existing connection
+				if (MIDI::ALSA::connectto(1,$cl,$po)) {
+					warn "FF 09 event: connecting to $text\n";
+				}
+			}
+			
+		}
+	}
+}
+foreach my $is ($[+1..$#score) {
+	my @cl_po = ();  # each track starts with this empty
+	foreach my $ev_ref (@{$score[$is]}) {
+		my @event = @{$ev_ref};
+		# detect FF 09 events and set alsa-destination-port accordingly
+		if ($event[$[] eq 'text_event_09') {
+			my $text = $event[$[+2];
+			@cl_po = MIDI::ALSA::parse_address($text);
+			# warn "text=$text cl_po=@cl_po\n";
+			next;
+		}
 		my @alsaevent = MIDI::ALSA::scoreevent2alsa(@event);
-		# warn "alsaevent=@alsaevent\n";
+		if (@cl_po) { $alsaevent[$[+6] = \@cl_po; }
+# Doesn't seem to work, although I think this is what aplaymidi does.
+# @cl_po is 128:0  but the doc reads more like every separate synth needs
+# a separate $id:$portnum connecting to it, and $alsaevent[$[+6] should be
+# set to the local end $id:$portnum, rather than the remote end 128:0
 		if (@alsaevent) { MIDI::ALSA::output(@alsaevent); }
 	}
 }
@@ -99,9 +123,6 @@ sub opus2score {  my ($ticks, @opus_tracks) = @_;
 		return (1000,[],);
 	}
 	my @score = ($ticks,);
-	#foreach my $i ($[+1 .. $#_) {
-	#	push @score, MIDI::Score::events_r_to_score_r($score[$i]);
-	#}
 	my @tracks = deepcopy(@opus_tracks); # couple of slices probably quicker...
 	# print "opus2score: tracks is ", Dumper(@tracks);
 	foreach my $opus_track_ref (@tracks) {
@@ -121,7 +142,7 @@ sub opus2score {  my ($ticks, @opus_tracks) = @_;
 					${$new_event_ref}[2] = $ticks_so_far - ${$new_event_ref}[1];
 					push @score_track, $new_event_ref;
 				} else {
-					_warn("note_off without a note_on, cha=$cha pitch=$pitch")
+					warn("note_off without a note_on, cha=$cha pitch=$pitch")
 				}
 			} elsif ($opus_event[0] eq 'note_on') {
 				my $cha = $opus_event[2];  # 4.4
@@ -251,6 +272,7 @@ Prints version number.
 
 =head1 CHANGES
 
+ 20111103  1.2  use the new MIDI-ALSA 1.11 to handle portnames
  20111031  1.1  connects from multiple (comma-separated) ports
  20110310  1.0  first working version
 

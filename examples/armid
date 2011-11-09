@@ -6,8 +6,8 @@
 #     This script is free software; you can redistribute it and/or      #
 #            modify it under the same terms as Perl itself.             #
 #########################################################################
-my $Version       = '1.1';
-my $VersionDate   = '31oct2011';
+my $Version       = '1.2';
+my $VersionDate   = '03nov2011';
 use open ':locale';
 
 my $InputPort = '';
@@ -17,9 +17,6 @@ while ($ARGV[$[] =~ /^-([a-z])/) {
 		print "$n version $Version $VersionDate\n";
 		exit 0;
 	} elsif ($1 eq 'p' or $1 eq 'i') { shift; $InputPort = shift;
-        if ($InputPort !~ /^\d+(:\d)?(,\d+(:\d)?)*$/)  {
-            die "bad -p arg: $InputPort\n";
-        }
 	} else {
 		print "usage:\n";  my $synopsis = 0;
 		while (<DATA>) {
@@ -43,12 +40,7 @@ eval 'require MIDI::ALSA'; if ($@) {
 
 MIDI::ALSA::client("$0 MIDI::ALSA client", 1, 0, 1) or die "client failed";
 foreach my $cl_po (split /,/, $InputPort) {
-    $cl_po =~ /^(\d+):?(\d*)$/;
-    my $cl = $1; my $po = $2 or 0;
-    if ($cl == MIDI::ALSA::id()) {
-        die "can't connect from $cl_po, which is myself\n";
-    }
-    if (! MIDI::ALSA::connectfrom( 0, $cl, $po )) {
+    if (! MIDI::ALSA::connectfrom( 0, $cl_po )) {
         die "can't connect from ALSA client $cl_po\n";
     }
 }
@@ -204,6 +196,7 @@ Prints version number.
 
 =head1 CHANGES
 
+ 20111103  1.2  use the new MIDI-ALSA 1.11 to handle portnames
  20111031  1.1  connects from multiple (comma-separated) ports
  20110310  1.0  first working version
 

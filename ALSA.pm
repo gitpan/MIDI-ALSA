@@ -10,8 +10,9 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.11';
-# 2011     1.12 ?
+$VERSION = '1.13';
+# 20111108 1.13 repair version number
+# 20111108 1.12 output() does not broadcast if destination is set
 # 20111101 1.11 add parse_address(), and call automatically from connectto() etc
 # 20101024 1.10 crash-proof all xs_ subs if called before client exists
 # 20100624 1.09 $maximum_nports increased from 4 to 64

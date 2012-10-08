@@ -64,7 +64,7 @@ CODE:
 	int portid, n;
 	if (snd_seq_open(&MY_CXT.seq_handle,"default",SND_SEQ_OPEN_DUPLEX,0) < 0) {
 		fprintf(stderr, "Error creating ALSA client.\n");
-		RETVAL = 0;
+		XSRETURN(0);
 	}
 	snd_seq_set_client_name(MY_CXT.seq_handle, client_name );
 	if ( createqueue )
@@ -118,7 +118,7 @@ CODE:
 	addr = alloca(sizeof(snd_seq_addr_t));
 	int rc = snd_seq_parse_address(MY_CXT.seq_handle, addr, port_name);
 	if (rc < 0) {
-		fprintf(stderr, "Invalid port %s - %s\n", port_name, snd_strerror(rc));
+		/* fprintf(stderr, "Invalid port %s - %s\n", port_name, snd_strerror(rc)); */
 		XSRETURN(0);
 	}
 	ST(0) = sv_2mortal(newSVnv(addr->client));
@@ -273,11 +273,6 @@ CODE:
 			break;
 
 		default:
-			/* lua_pushinteger(L, ev->data.note.channel);
-			lua_pushinteger(L, ev->data.note.note);
-			lua_pushinteger(L, ev->data.note.velocity);
-			lua_pushinteger(L, ev->data.note.off_velocity);
-			lua_pushinteger(L, ev->data.note.duration); */
 			XSRETURN(9);
 	}
 }
@@ -327,7 +322,7 @@ CODE:
 	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
     snd_seq_event_t ev;
     ev.type          = type;
-    ev.flags         = flags;
+    ev.flags         = flags | SND_SEQ_TIME_STAMP_REAL;  /* 1.15 */
     ev.tag           = tag;
     ev.queue         = queue;
     ev.time.time.tv_sec  = (int) t;

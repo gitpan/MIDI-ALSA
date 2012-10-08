@@ -6,7 +6,6 @@ Makefile.PL
 test.pl
 ALSA.pm
 ALSA.xs
-examples/alsanum
 examples/apmid
 examples/armid
 examples/midiclick

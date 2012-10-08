@@ -10,7 +10,8 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.14';
+$VERSION = '1.15';
+# 20120930 1.15 output() timestamp and duration in floating-point seconds
 # 20111112 1.14 but output() does broadcast if destination is self
 # 20111108 1.13 repair version number
 # 20111108 1.12 output() does not broadcast if destination is set
@@ -132,6 +133,7 @@ sub parse_address { my ($port_name) = @_;
 sub connectfrom { my ($myport, $src_client, $src_port) = @_;
 	if ($src_client =~ /[A-Za-z]/ || !defined $src_port) { # 1.03 ?
 		($src_client, $src_port) = parse_address("$src_client"); # 1.11
+		if (! defined $src_client) { return undef; }   # 1.15
 	}
     return &xs_connectfrom($myport, $src_client, $src_port || 0);
 }
@@ -139,18 +141,21 @@ sub connectto { my ($myport, $dest_client, $dest_port) = @_;
 	if ($dest_client =~ /[A-Za-z]/ || !defined $dest_port) { # 1.03 ?
 		# http://alsa-project.org/alsa-doc/alsa-lib/group___seq_middle.html
 		($dest_client, $dest_port) = parse_address("$dest_client"); # 1.11
+		if (! defined $dest_client) { return undef; }   # 1.15
 	}
     return &xs_connectto($myport, $dest_client, $dest_port || 0);
 }
 sub disconnectfrom { my ($myport, $src_client, $src_port) = @_;
 	if ($src_client =~ /[A-Za-z]/ || !defined $src_port) { # 1.03 ?
 		($src_client, $src_port) = parse_address("$src_client"); # 1.11
+		if (! defined $src_client) { return undef; }   # 1.15
 	}
     return &xs_disconnectfrom($myport, $src_client, $src_port || 0);
 }
 sub disconnectto { my ($myport, $dest_client, $dest_port) = @_;
 	if ($dest_client =~ /[A-Za-z]/ || !defined $dest_port) { # 1.03 ?
 		($dest_client, $dest_port) = parse_address("$dest_client"); # 1.11
+		if (! defined $dest_client) { return undef; }   # 1.15
 	}
     return &xs_disconnectto($myport, $dest_client, $dest_port || 0);
 }
@@ -203,6 +208,12 @@ sub output { my @ev = @_;
 		return &xs_output($ev[0], $ev[1], $ev[2], $ev[3], $ev[4],
 		  $src[0],$src[1], $dest[0],$dest[1],
 		  length($s),1,2,3,4,5,$s);   #  (encoding?)
+	} elsif ($ev[0] == SND_SEQ_EVENT_NOTE) {   # 1.15 duration in FP secs
+		return &xs_output($ev[0], $ev[1], $ev[2], $ev[3], $ev[4],
+		  $src[0],$src[1], $dest[0],$dest[1],
+		  $data[0], $data[1], $data[2],$data[3],
+		  # the argument is an int, so we convert here, not in xs_output
+		  int(0.5 + 1000*$data[4])||0, $data[5]||0,q{});
 	} else {
 		return &xs_output($ev[0], $ev[1], $ev[2], $ev[3], $ev[4],
 		  $src[0],$src[1], $dest[0],$dest[1],
@@ -223,11 +234,11 @@ sub syncoutput {
 	return &xs_syncoutput();
 }
 # ---------------- public functions from alsamidi.py  -----------------
-
+# 1.15 the SND_SEQ_TIME_STAMP_REALs are now superfluous
 sub noteevent { my ($ch,$key,$vel,$start,$duration ) = @_;
 	return ( SND_SEQ_EVENT_NOTE, SND_SEQ_TIME_STAMP_REAL,
-		0, 0, $start, [ 0,0 ], [ 0,0 ],
-		[$ch,$key,$vel, $vel, int(0.5 + 1000*$duration) ] );
+		0, 0, $start, [ 0,0 ], [ 0,0 ], [ $ch,$key,$vel,$vel,$duration ] );
+		# [$ch,$key,$vel, $vel, int(0.5 + 1000*$duration) ] ); pre-1.15
 }
 sub noteonevent { my ($ch,$key,$vel ) = @_;
 	return ( SND_SEQ_EVENT_NOTEON, SND_SEQ_TIME_STAMP_REAL,
@@ -317,7 +328,8 @@ sub alsa2scoreevent { my @alsaevent = @_;
 	my @data  = @{$alsaevent[7]};   # deepcopy needed?
 	# snd_seq_ev_note_t: channel, note, velocity, off_velocity, duration
 	if ($alsaevent[0] == SND_SEQ_EVENT_NOTE) {
-		return ( 'note',$ticks,$data[4],$data[0],$data[1],$data[2] );
+		return ( 'note',$ticks, int(0.5 + 1000*$data[4]),   # 1.15
+		  $data[0],$data[1],$data[2] );
 	} elsif ($alsaevent[0] == SND_SEQ_EVENT_NOTEOFF
 	 or ($alsaevent[0] == SND_SEQ_EVENT_NOTEON and !$data[2])) {
 		my $cha = $data[0];
@@ -368,13 +380,12 @@ sub alsa2scoreevent { my @alsaevent = @_;
 	}
 }
 sub scoreevent2alsa { my @event = @_;
-	# what's this? 1.03 already and completely missing !
     my $time_in_secs = 0.001*$event[1];  # ms ticks -> secs
     if ($event[0] eq 'note') {
         # note on and off with duration; event data type = snd_seq_ev_note_t
         return ( SND_SEQ_EVENT_NOTE, SND_SEQ_TIME_STAMP_REAL,
          0, 0, $time_in_secs, [ 0,0 ], [ 0,0 ],
-         [ $event[3], $event[4], $event[5], 0, $event[2] ] );
+         [ $event[3], $event[4], $event[5], 0, 0.001*$event[2] ] );   # 1.15
     } elsif ($event[0] eq 'control_change') {
         # controller; snd_seq_ev_ctrl_t; channel, unused[3], param, value
         return ( SND_SEQ_EVENT_CONTROLLER, SND_SEQ_TIME_STAMP_REAL,
@@ -502,6 +513,14 @@ but all the functions and constants can be exported, e.g.:
  use MIDI::ALSA(client, connectfrom, connectto, id, input, output);
  use MIDI::ALSA(':CONSTS');
 
+As from version 1.15, note durations are in seconds rather
+than milliseconds, for consistency with the timestamps.
+This introduces a backward incompatibility which only affects
+you if are putting together your own alsaevents without using the
+noteevent() function.  In the worst case you have to detect versions:
+
+ if ($MIDI::ALSA::VERSION < 1.145) { $alsevent[7][4] *= 1000; }
+
 =head1 FUNCTIONS
 
 Functions based on those in I<alsaseq.py>:
@@ -625,13 +644,16 @@ not as strings, and must therefore be used without any dollar-sign e.g.:
  if ($event[0] == MIDI::ALSA::SND_SEQ_EVENT_PORT_UNSUBSCRIBED) { ...
 
 Note that if the event is of type SND_SEQ_EVENT_PORT_UNSUBSCRIBED
-then the remote client and port do not get set;
-you need to use listconnected() to see what's happened.
+then that message has come from the System,
+so its I<src_client> and I<src_port> do not tell you who disconnected.
+You'll need to use I<listconnected()> to see what's happened.
 
 The data array is mostly as documented in
 http://alsa-project.org/alsa-doc/alsa-lib/seq.html.
 For NOTE events,  the elements are
 ( $channel, $pitch, $velocity, unused, $duration );
+where since version 1.15 the I<duration> is in floating-point seconds
+(unlike in the I<alsaseq.py> Python module where it is in milliseconds).
 For SYSEX events, the data array contains just one element:
 the byte-string, including any F0 and F7 bytes.
 For most other events,  the elements are
@@ -682,6 +704,10 @@ playing - otherwise, ALSA will reset the port after every event.
 If the queue buffer is full, I<output>() will wait
 until space is available to output the event.
 Use I<status>() to know how many events are scheduled in the queue.
+
+If no queue has been started, a SND_SEQ_EVENT_NOTE event
+can only emerge as a SND_SEQ_EVENT_NOTEON, since a queue
+is necessary in order to schedule the corresponding NOTEOFF.
 
 =item start()
 
@@ -898,11 +924,6 @@ Perhaps there should be a general connect_between() mechanism,
 allowing the interconnection of two other clients,
 a bit like I<aconnect 32 20>
 
-If an event is of type SND_SEQ_EVENT_PORT_UNSUBSCRIBED
-then the remote client and port are zeroed-out,
-which makes it hard to know which client has just disconnected.
-You have to consult listconnectedto() and listconnectedfrom()
-
 ALSA does not transmit Meta-Events like I<text_event>,
 and there's not much can be done about that.
 
@@ -930,6 +951,7 @@ Peter J Billam, http://www.pjb.com.au/comp/contact.html
  snd_seq_get_any_client_info
  snd_seq_get_client_info
  snd_seq_client_info_t
+ http://hackage.haskell.org/package/alsa-seq
 
 =cut
 

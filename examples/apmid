@@ -6,6 +6,12 @@
 #     This script is free software; you can redistribute it and/or      #
 #            modify it under the same terms as Perl itself.             #
 #########################################################################
+# XXX should, by default, display elapsed time while playing,
+# mplayer displays on STDOUT (if stdout is a tty ?)
+# A: 249.3 (04:09.2) of 537.0 (08:57.0)  0.4% 
+# perhaps also spacebar, arrows and page-keys;
+# perhaps also channels, perhaps even the sounding notes ?;
+# therefore also a -q=quiet or -s=silent option
 my $Version       = '1.2';
 my $VersionDate   = '03nov2011';
 use open ':locale';

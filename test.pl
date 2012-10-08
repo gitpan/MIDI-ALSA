@@ -16,6 +16,9 @@ use Test::Simple tests => 55;
 my @virmidi = virmidi_clients_and_files();
 if (@virmidi < 4) {
 	print("# To run all tests, four virmidi clients are needed...\n");
+	print("# You might need to add the line:\n");
+	print("#    modprobe snd_virmidi enable=1   # to create 4 virmidi ports\n");
+	print("# to your  /etc/rc.local  :-)\n");
 }
 
 $rc = MIDI::ALSA::inputpending();
@@ -83,7 +86,8 @@ if (@virmidi < 2) {
 	ok(1, 'skipping listconnectedfrom() test');
 } else {
 	open(my $inp, '>', $virmidi[1])
-	 || die "can't open $virmidi[1]: $!\n";  # client 24
+	 || die "can't open $virmidi[1]: $!\n";  # client 20
+	my $vm = 0 + $virmidi[0];
 	select($inp); $|=1; select(STDOUT);
 
 	print("# feeding ourselves a patch_change event...\n");
@@ -91,12 +95,12 @@ if (@virmidi < 2) {
 	$rc =  MIDI::ALSA::inputpending();
 	ok($rc > 0, "inputpending() returns $rc");
 	@alsaevent  = MIDI::ALSA::input();
-	@correct = (11, 1, 0, 1, 300, [24,0], [$id,1], [0, 0, 0, 0, 0, 99] );
+	@correct = (11, 1, 0, 1, 300, [$vm,0], [$id,1], [0, 0, 0, 0, 0, 99] );
 	$alsaevent[4] = 300;
 	#warn("alsaevent=".Dumper(@alsaevent)."\n");
 	# warn("correct  =".Dumper(@correct)."\n");
 	ok(Dumper(@alsaevent, \@correct),
-	 'input() returns (11,1,0,1,300,[24,0],[id,1],[0,0,0,0,0,99])');
+	 "input() returns (11,1,0,1,300,[$vm,0],[id,1],[0,0,0,0,0,99])");
 	@e = MIDI::ALSA::alsa2scoreevent(@alsaevent);
 	#warn("e=".Dumper(\@e)."\n");
 	@correct = ('patch_change',300000,0,99);
@@ -107,14 +111,16 @@ if (@virmidi < 2) {
 	print $inp "\xB2\x0A\x67"; # 11*16+2,10,103 {'control_change',3,2,10,103}
 	$rc =  MIDI::ALSA::inputpending();
 	@alsaevent  = MIDI::ALSA::input();
-	@correct = (10, 1, 0, 1, 300, [24,0], [$id,1], [2, 0, 0, 0,10,103] );
+	@correct = (10, 1, 0, 1, 300, [$vm,0], [$id,1], [2, 0, 0, 0,10,103] );
 	$alsaevent[4] = 300;
-	ok(Dumper(@alsaevent) eq Dumper(@correct),
-	 'input() returns (10,1,0,1,300,[24,0],[id,1],[2,0,0,0,10,103])');
-	@e = MIDI::ALSA::alsa2scoreevent(@alsaevent);
-	#warn("e=".Dumper(@e)."\n");
-	@correct = ('control_change',300000,2,10,103);
+	#warn("alsaevent=".Dumper(@alsaevent)."\n");
 	#warn("correct=".Dumper(@correct)."\n");
+	ok(Dumper(@alsaevent) eq Dumper(@correct),
+	 "input() returns (10,1,0,1,300,[$vm,0],[id,1],[2,0,0,0,10,103])");
+	@e = MIDI::ALSA::alsa2scoreevent(@alsaevent);
+	# warn("e=".Dumper(@e)."\n");
+	@correct = ('control_change',300000,2,10,103);
+	# warn("correct=".Dumper(@correct)."\n");
 	ok(Dumper(@e) eq Dumper(@correct),
 	 'alsa2scoreevent() returns ("control_change",300000,2,10,103)');
 
@@ -123,14 +129,14 @@ if (@virmidi < 2) {
 	$rc =  MIDI::ALSA::inputpending();
 	@alsaevent  = MIDI::ALSA::input();
 	$save_time = $alsaevent[4];
-	@correct = ( 6, 1, 0, 1, 300, [ 24, 0 ], [ 129, 1 ], [ 0, 60, 101, 0, 0 ] );
+	@correct = ( 6, 1, 0, 1, 300, [$vm,0], [129,1], [ 0, 60, 101, 0, 0 ] );
 	$alsaevent[4] = 300;
 	${$alsaevent[7]}[3] = 0;
 	${$alsaevent[7]}[4] = 0;
 	#print "alsaevent=".Dumper(@alsaevent);
 	#print "correct  =".Dumper(@correct);
 	ok(Dumper(@alsaevent) eq Dumper(@correct),
-	 'input() returns (6,1,0,1,300,[24,0],[id,1],[0,60,101,0,0])');
+	 "input() returns (6,1,0,1,300,[$vm,0],[id,1],[0,60,101,0,0])");
 	@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
 	#$scoreevent[1] = 300000;
 	#@correct = ('note_on',300000,0,60,101);
@@ -142,13 +148,13 @@ if (@virmidi < 2) {
 	$rc =  MIDI::ALSA::inputpending();
 	@alsaevent  = MIDI::ALSA::input();
 	$save_time = $alsaevent[4];
-	@correct = ( 7, 1, 0, 1, 301, [ 24,0 ], [ 129,1 ], [ 0, 60, 101, 0, 0 ] );
+	@correct = ( 7, 1, 0, 1, 301, [ $vm,0 ], [ 129,1 ], [ 0, 60, 101, 0, 0 ] );
 	$alsaevent[4] = 301;
 	${$alsaevent[7]}[4] = 0;
 	# print('alsaevent='.Dumper(@alsaevent));
 	# print('correct='.Dumper(@correct));
 	ok(Dumper(@alsaevent) eq Dumper(@correct),
-	 'input() returns (7,1,0,1,301,[24,0],[id,1],[0,60,101,0,0])');
+	 "input() returns (7,1,0,1,301,[$vm,0],[id,1],[0,60,101,0,0])");
 	@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
 	# print('scoreevent='.Dumper(@scoreevent));
 	$scoreevent[1] = 300000;
@@ -160,12 +166,12 @@ if (@virmidi < 2) {
 	print $inp "\xF0}hello world\xF7"; # {'sysex_f0',0,'hello world'}
 	@alsaevent  = MIDI::ALSA::input();
 	$save_time = $alsaevent[4];
-	@correct = (130, 5, 0, 1, 300, [24,0], [129,1],
+	@correct = (130, 5, 0, 1, 300, [$vm,0], [129,1],
 	 ["\xF0}hello world\xF7",undef,undef,undef,0] );
 	$alsaevent[4] = 300;
 	${$alsaevent[7]}[4] = 0;
 	ok(Dumper(@alsaevent) eq Dumper(@correct),
-	 'input() returns (130,5,0,1,300,[24,0],[id,1],["\xF0}hello world\xF7"])');
+	 'input() returns (130,5,0,1,300,[vm,0],[id,1],["\xF0}hello world\xF7"])');
 	#print('alsaevent='.Dumper(@alsaevent));
 	@scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);
 	$scoreevent[1] = 300000;

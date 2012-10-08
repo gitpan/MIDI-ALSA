@@ -18,8 +18,8 @@ eval 'require Term::Clui'; if ($@) { die
 	"you'll need to install the Term::Clui module from www.cpan.org\n";
 }
 my $CurrentX; my $CurrentY;
-my $Version      = '5.1';   # use the new MIDI-ALSA 1.11 to handle portnames
-my $VersionDate  = '03nov2011';
+my $Version      = '5.3';   # the Y-contoller works correctly
+my $VersionDate  = '07apr2012';
 my $Channel   = 0;
 my $Volume    = 100;
 my $Pan       = 64;
@@ -183,7 +183,7 @@ ReadMode(0, STDIN);
 
 # ------------------- infrastructure -------------------
 sub display_alsa {
-	@ConnectedTo = ();
+	my @ConnectedTo = ();
 	my $id = MIDI::ALSA::id();
 	foreach (MIDI::ALSA::listconnectedto()) {
 		my @cl = @$_;
@@ -366,25 +366,26 @@ sub new_alsa {
 	display_alsa(); display_keystrokes();
 }
 sub new_Xcontroller {
-	my $c = get_int('MIDI-Controller for X-mouse');
-	if (! defined $c) { display_midi_controllers(); return; }
+	my $cc = get_int('MIDI-Controller for X-mouse');
+	if (! defined $cc) { display_midi_controllers(); return; }
 	if (!%Cha2Xcontroller and !%Cha2Ycontroller) { set_mouse_mode(); }
-	$Cha2Xcontroller{$Channel} = 0+$c;
-	$Cha2cc[$Channel]{$c} = 'X';
-	if ($c == 10) { display_pan(); }
-	#warn "Channel=$Channel\n";
+	delete $Cha2cc[$Channel]{$Cha2Xcontroller{$Channel}};   # 5.2
+	$Cha2Xcontroller{$Channel} = 0+$cc;
+	$Cha2cc[$Channel]{$cc} = 'X';
+	if ($cc == 10) { display_pan(); }
 	#foreach (sort keys %Cha2Xcontroller) {
 	#	warn "Cha2Xcontroller{$_} = $Cha2Xcontroller{$_}\n";
 	#}
 	display_midi_controllers(); return;
 }
 sub new_Ycontroller {
-	my $c = get_int('MIDI-Controller for Y-mouse');
-	if (! defined $c) { display_midi_controllers(); return; }
+	my $cc = get_int('MIDI-Controller for Y-mouse');
+	if (! defined $cc) { display_midi_controllers(); return; }
 	if (!%Cha2Xcontroller and !%Cha2Ycontroller) { set_mouse_mode(); }
-	$Cha2Ycontroller{$Channel} = 0+$c;
-	$Cha2cc[$Channel]{$c} = 'Y';
-	if ($c == 10) { display_pan(); }
+	delete $Cha2cc[$Channel]{$Cha2Ycontroller{$Channel}};   # 5.2
+	$Cha2Ycontroller{$Channel} = 0+$cc;
+	$Cha2cc[$Channel]{$cc} = 'Y';
+	if ($cc == 10) { display_pan(); }
 	#foreach (sort keys %Cha2Ycontroller) {
 	#	warn "Cha2Ycontroller{$_} = $Cha2Ycontroller{$_}\n";
 	#}
@@ -929,6 +930,8 @@ This option is superseded by the I<ChannelSpec> arguments.
 
 =head1 CHANGES
 
+ 20120407  5.3  the Y-controller works correctly
+ 20120401  5.2  changing the X- or Y-contoller is displayed correctly
  20111103  5.1  use the new MIDI-ALSA 1.11 to handle portnames
  20111028  5.0  OutputPort can be a comma-separated list
  20110917  4.9  Pan controlled by mouse is not falsely displayed

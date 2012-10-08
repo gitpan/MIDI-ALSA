@@ -8,14 +8,14 @@
 #########################################################################
 # see 20111002    midislide ?
 # 6 cols per fader   ordered by channel then by midicontroller
-# If tight, could drop the command and go to 5 chars wide...
+# If tight, could drop the command and go to 5 chars wide ?
+# On exit, could print the equivalent muscript, or Perl,Python,or Lua ?
+# Curses interface from midiedit, midi stuff from midikbd.
+
+my $Version      = '1.7';
+my $VersionDate  = '31aug2012';
+my $OutputPort   = $ENV{'ALSA_OUTPUT_PORTS'};
 my $ColsPerFader = 6;
-# Curses interface from midiedit, midi stuff from midikbd
-
-my $Version = '1.4';
-my $VersionDate = '03nov2011';
-
-my $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'};
 
 eval 'require Curses'; if ($@) {
 	die "you'll need to install the Curses module from www.cpan.org\n";
@@ -31,9 +31,6 @@ import MIDI::ALSA;
 while ($ARGV[$[] =~ /^-(\w)/) {
 	if ($1 eq 'd')      { $UseCurses = 0; shift;
 	} elsif ($1 eq 'o') { shift; $OutputPort = shift;
-		#if ($OutputPort !~ /^\d+(:\d)?(,\d+(:\d)?)*$/)  {
-		#	die "bad -o arg: $OutputPort\n";
-		#}
 	} else {
 print <<EOT; exit 0;
 Usage:
@@ -55,14 +52,11 @@ if (! MIDI::ALSA::client( "midifade pid=$$", 0, 1, 1 )) {
 	die "can't start up the ALSA client\n";
 }
 foreach my $cl_po (split /,/, $OutputPort) {  # 1.3
-    #$cl_po =~ /^(\d+):?(\d*)$/;
-    #my $cl = $1; my $po = $2 or 0;
-    #if ($cl == MIDI::ALSA::id()) {
-    #    die "can't connect to $cl_po, which is myself\n";
-    #}
-    if (! MIDI::ALSA::connectto( 1, $cl_po )) {  # 1.4
-        die "can't connect to ALSA client $cl_po\n";
-    }
+	if ($cl_po ne '0') {
+		if (! MIDI::ALSA::connectto( 1, $cl_po )) {  # 1.4
+			die "can't connect to ALSA client $cl_po\n";
+		}
+	}
 }
 if (! MIDI::ALSA::start()) { die "can't start the ALSA client queue\n"; }
 my $ID = MIDI::ALSA::id();
@@ -83,6 +77,7 @@ initscr(); cbreak(); noecho(); nonl(); clear();
 keypad(stdscr(),1);
 $SIG{'INT'} = sub {exit 0;}; $SIG{'TERM'} = sub {exit 0;};
 eval 'sub END {endwin();}';  # mustn't create call to endwin in nonCurses mode
+display_clientstr();   # 1.6
 display_screen();
 
 while (1) {  # the loop
@@ -138,29 +133,6 @@ while (1) {  # the loop
 		output_fader($IFader); display_screen();
 	}
 }
-
-#   Event  Ticks Dura Cha  Note   Vol  Secs  Currently playing (just use bold?)
-#=> note    t=8  d=23 c=3  n=58  v=100 35.1
-#   NOW                                35.4  c=3 n=58,61 p=74; c=2 n=24 p=0
-#   note    t=2  d=23 c=3  n=57  v=100 36.1
-#
-# B=Bar b=beat I=insert O=open
-# m=mark g=goto
-# D=Delete p=paste y=yank
-# u=undo ^R=redo /=find ?=reverse_find
-# Up/Down=+-1event,  Left/Right=+-1sec,  PageUp/PageDown=+-10sec
-# +=gotonext (asks beat,Bar,note,end) or numbers mean seconds.
-# -=gotoprevious (asks beat,Bar,note,start) or numbers mean seconds.
-# <space>=pause  End=all_notes_off
-
-# when paused on a note, t,d,c,n,v should edit the respective fields
-# so perhaps D (or Del) should be Delete?
-# Perhaps just show Time and Dura in secs ?
-# forget "Currently Playing", sounding notes should be in bold.
-
-#=> note    t=9842  d=845 c=3  n=58  v=100     PAUSED at 9863
-# t938           sets time for this event;
-# t-10 or t+15   increment time for this and all subsequent events.
 
 #-------------- Infrastructure for the Curses version -------------
 sub addl { my ($lin,$col,$str) = @_;
@@ -270,7 +242,7 @@ sub display_faders {
 sub output_fader { my $i = $_[$[];
 	if ($i < $[ or $i > $#Faders) { die "output_fader: i=$i\n"; }
 	my ($c,$m,$v) = @{$Faders[$i]};
-    my ($status,$time,$events ) = MIDI::ALSA::status();
+	my ($status,$time,$events ) = MIDI::ALSA::status();
 	MIDI::ALSA::output(MIDI::ALSA::controllerevent($c,$m,$v,$time));
 	MIDI::ALSA::syncoutput();
 }
@@ -304,11 +276,7 @@ sub display_fader { my $i = $_[$[];
 		my $s1 = cc2str($m);
 		my $x = $icol + 4 - round(0.5 * length($s1));
 		if ($x < 0) { $x = 0; } elsif ($x > $COLS) { $x = $COLS - length $s1; }
-		my $s2 = "client $ID, midifade pid=$$";
-		if (($icol+4) > 0.5*$COLS) { move(0,0);
-		} else { move(0, $COLS-length($s2)-1);
-		}
-		addstr($s2);
+		display_clientstr();
 		move(0,$x); addstr("$s1 "); # cc-str overwrites client-str if conflict
 	}
 	if ($i == $#Faders) {
@@ -317,6 +285,15 @@ sub display_fader { my $i = $_[$[];
 		}
 	}
 	move($LINES-4, ($IFader-$[) * $ColsPerFader + 4);
+}
+
+sub display_clientstr {   # 1.6
+	my $s2 = "client $ID, midifade pid=$$";
+	if (($icol+4) > 0.5*$COLS) { move(0,0);
+	} else { move(0, $COLS-length($s2)-1);
+	}
+	addstr($s2);
+	refresh();
 }
 
 sub display_keystrokes {
@@ -368,7 +345,6 @@ sub new_fader_dialogue {
 		$iline -= 1;
 	}
 	return @newfader;
-	# warn "new_fader_dialogue = ".join(', ',@FindEvent)."\r\n"; sleep 5;
 }
 
 sub quit {
@@ -383,15 +359,15 @@ sub quit {
 
 # ----------------------- infrastructure --------------------
 sub round   { my $x = $_[$[];
-    if ($x > 0.0) { return int ($x + 0.5); }
-    if ($x < 0.0) { return int ($x - 0.5); }
-    return 0;
+	if ($x > 0.0) { return int ($x + 0.5); }
+	if ($x < 0.0) { return int ($x - 0.5); }
+	return 0;
 }
 sub deepcopy {
-    use Storable;
-    if (1 == @_ and ref($_[$[])) { return Storable::dclone($_[$[]);
-    } else { my $b_ref = Storable::dclone(\@_); return @$b_ref;
-    }
+	use Storable;
+	if (1 == @_ and ref($_[$[])) { return Storable::dclone($_[$[]);
+	} else { my $b_ref = Storable::dclone(\@_); return @$b_ref;
+	}
 }
 
 =pod
@@ -404,6 +380,7 @@ midifade - Provides faders generating midi-controller events
 
  midifade c13m71v120 c2m11v80 # 2 faders: cha2 cc11=80, cha13 cc71=120
  midifade -o 128:0            # outputs to port 0 of client 128
+ midifade -o TiMidity         # outputs to TiMidity
  midifade -v                  # prints the Version number
  perldoc midifade             # read the manual :-)
 
@@ -446,7 +423,8 @@ e.g. B<-o 20,128:1>
 If the ALSA port is specified as B<0> then I<midifade> will start
 up without connecting to anything. This allows you, for example,
 to use I<midifade> (assumed here to be starting up as ALSA-client
-129 ; check with I<aconnect -ol>) to control I<ecasound>:
+129 ; check with I<aconnect -ol>)
+to control I<ecasound>:
 
  midifade -o 0 c0m9v102 c1m9v105 c2m9v96 c3m9v64
 
@@ -490,6 +468,9 @@ The B<v> bit is optional; its default value is 64.
 
 =head1 CHANGES
 
+ 1.7, 20120831, -o "string" works
+ 1.6, 20120820, display_clientstr called at start
+ 1.5, 20111216, if  -o 0  then midifade starts up but connects to nothing
  1.4, 20111103, use the new MIDI-ALSA 1.11 to handle portnames
  1.3, 20111028, OutputPort can be a comma-separated list
  1.2, 20111027, add-new-fader dialogue allows 3-digit controller-nums

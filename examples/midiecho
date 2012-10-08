@@ -7,32 +7,24 @@
 #            modify it under the same terms as Perl itself.             #
 #########################################################################
 # Simulates (very roughly) a tape-delay echo on a particular MIDI-channel
-# or, since 2.0. on real-time MIDI,
+# in a MIDI-file, or, since 2.0. on real-time-MIDI,
 # by issuing repeated note_on events with diminishing volume.  YMMV!
-#
-# We have to work in MIDI::Event, because we may (if no -N) need
-# to produce one note_off for multiple note_on's ...
-# Delays in secs more appropriate than in millisecs ?
-# should Reset at start ?
 
 use Term::ReadKey;
 use bytes;
 
-my $Version      = '3.8';   # use the new MIDI-ALSA 1.11 to handle portnames
-my $VersionDate  = '03nov2011';
+my $Version      = '4.1';   # uses api_for_perl for file-mode
+my $VersionDate  = '09sep2012';
 my %Channel      = ('0',1); # MIDI channel on which the echoes will be added
 my %EchoNotes    = ();      # MIDI notes to which the echoes will be added
 my @Delays       = (300);   # incremental milliseconds of the various delays
 my @Echoes       = ();      # the channels that the echoes will be sent to
 my @PitchChanges = (0);     # the pitch-changes of the various channels
-my %pitch_wheel  = ();      # pitch_wheel, -1..+1 semitones, -4095..+4096
-my %pitch_delta  = ();      # int(PitchChange/100) added to note-pitch
+my %PitchWheel   = ();      # pitch_wheel, -1..+1 semitones, -4095..+4096
+my @PitchDelta   = ();      # int(PitchChange/100) added to note-pitch
 my @Patches      = ();      # the Patches that the echo-channels will be set to
 my @Softenings   = (25);    # decremental velocites (loudness) of the echoes
 my %DoEchoCC     = map {$_,1} (1,5,11,64,65,66,84); # Modul,Portam,Expr,Pedals
-my $Nesting = 1;    # the synth keeps count of nesting note_ons on each note
-my %nesting;        # $nesting{$cha}{$note} = number of nested output note_ons
-my @newevents;      # LoL of output events
 my $Debug        = 0;
 # no display in real-time-mode; for use in background, and in scripts:
 my $Quiet        = 0;
@@ -46,9 +38,6 @@ my $Icol         = 1;
 my $MidCol       = 32;
 
 # use Data::Dumper;  # to send the event array from parent to child
-eval 'require MIDI::ALSA'; if ($@) {
-	die "you'll need to install the MIDI-ALSA module from www.cpan.org\n";
-}
 use Time::HiRes;
 
 # check format of options args...
@@ -85,8 +74,6 @@ while ($ARGV[$[] =~ /^-(\w)/) {
 	} elsif ($1 eq 'i') { shift; $RealTimeMode = 1; $InputPort  = shift;
 	} elsif ($1 eq 'o') { shift; $RealTimeMode = 1; $OutputPort = shift;
 	} elsif ($1 eq 'Q') { shift; $Quiet      = 1;
-	} elsif ($1 eq 'N') { shift; $Nesting    = 1;  # now the default
-	} elsif ($1 eq 'S') { shift; $Nesting    = 0;
 	} elsif ($1 eq 'D') { shift; $Debug      = 1;
 	} else {
 		my $n = $0; $n =~ s#^.*/([^/]+)$#$1#;
@@ -127,52 +114,36 @@ if (@PitchChanges) {
 	my $i=$[; while (1) {
 		last if ($i > $#PitchChanges);
 		if (defined $PitchChanges[$i]) {  # 3.1
-			$pitch_delta{$Echoes[$i]} = int ($PitchChanges[$i]/100);
-			$pitch_wheel{$Echoes[$i]}
-			 = int (40.96 * ($PitchChanges[$i]-100*$pitch_delta{$Echoes[$i]}));
+			$PitchDelta[$i] = int ($PitchChanges[$i]/100); # 4.0
+			$PitchWheel{$Echoes[$i]}
+			 = int (40.96 * ($PitchChanges[$i]-100*$PitchDelta[$i]));
+			# %PitchWheel is not so clear, because it's a cc10=
 		}
 		$i++;
 	}
 }
 $#PitchChanges = $#Delays;
+$#PitchDelta  = $#Delays;
 
 if ($RealTimeMode) {
 	eval 'require MIDI::ALSA'; if ($@) {
 		die "you need to install the MIDI::ALSA module from www.cpan.org\n";
 	}
 
-	#if ($OutputPort =~ /^$|^\d+(:\d)?(,\d+(:\d)?)*$/)  {   # 3.6
-	#} else { die "bad -o arg: $a\n";
-	#}
 	if (!$OutputPort) { $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'}; }
 	if (!$OutputPort) {
     	warn "OutputPort not specified and ALSA_OUTPUT_PORTS not set\n";
 	}
-
 	if ($Quiet and !$InputPort) {  # 3.1
 		die "in -Q Quiet-mode you must specify the -i InputPort\n";
 	}
-	#if ($InputPort =~ /^$|^\d+(:\d)?(,\d+(:\d)?)*$/)  {   # 3.6
 	MIDI::ALSA::client( "midiecho pid=$$", 1, 1, 1 );
-	#} else { die "bad -i arg: $a\n";
-	#}
 	foreach my $cl_po (split /,/, $InputPort) {  # 3.6
-    	#$cl_po =~ /^(\d+):?(\d*)$/;
-    	#my $cl = $1; my $po = $2 or 0;
-		#if ($cl == MIDI::ALSA::id()) {
-        #	die "can't connect from $cl_po, which is myself\n";
-		#}
     	if (! MIDI::ALSA::connectfrom( 0, $cl_po )) {
         	die "can't connect from ALSA client $cl_po\n";
     	}
 	}
-
 	foreach my $cl_po (split /,/, $OutputPort) {  # 3.6
-    	#$cl_po =~ /^(\d+):?(\d*)$/;
-    	#my $cl = $1; my $po = $2 or 0;
-		#if ($cl == MIDI::ALSA::id()) {
-        #	die "can't connect to $cl_po, which is myself\n";
-		#}
     	if (! MIDI::ALSA::connectto( 1, $cl_po )) {
         	die "can't connect to ALSA client $cl_po\n";
     	}
@@ -184,16 +155,18 @@ if ($RealTimeMode) {
 	display_alsa(); display_channel(); display_keystrokes(); display_echoes();
 
 	# output the patch-change events on the channels that need them
+#warn "Patches=@Patches\n";
 	foreach my $i_echo ($[ .. $#Patches) {
 		MIDI::ALSA::output(MIDI::ALSA::pgmchangeevent(
 			$Echoes[$i_echo],$Patches[$i_echo],));
+	#warn "pgmchangeevent($Echoes[$i_echo],$Patches[$i_echo],)\n";
 	}
 	# output the pitch-change events on the channels that need them
-	foreach my $channel (keys %pitch_wheel) {
-		my $change = $pitch_wheel{$channel};
+	foreach my $channel (keys %PitchWheel) {
+		my $change = $PitchWheel{$channel};
 		MIDI::ALSA::output(MIDI::ALSA::pitchbendevent($channel,$change,));
 		# if abs(cents)>100 (e.g. cents==1200) then we keep track
-		# of that in %pitch_delta and add it into the note events!
+		# of that in @PitchDelta and add it into the note events!
 	}
 
 	# How can we respond to keystrokes as well as to alsaevents?
@@ -329,9 +302,9 @@ if ($RealTimeMode) {
 							$PitchChanges[$i_echo] = $d;  # for us, the child
 							my $cmd = "\$PitchChanges[$i_echo] = $d; ";
 							my $delta = int($d/100);
-							$cmd .= "\$pitch_delta{$cha} = $delta; ";
+							$cmd .= "\$PitchDelta[$i_echo] = $delta; ";
 							my $w = int (40.96 * ($d-100*$delta));
-							$pitch_wheel{$cha} = $w;
+							$PitchWheel{$cha} = $w;
 							print STDOUT "$cmd MIDI::ALSA::output(MIDI::ALSA::"
 							 ."pitchbendevent($cha,$w,));\n";
 							kill 'HUP', $parent_pid;
@@ -381,6 +354,7 @@ if ($RealTimeMode) {
 		my %already = (0+$cha, 1); # 3.5
 		$alsaevent[3] = 0;   # reset "queue"
 		my $cumulative_delay = 0;
+		my $dry_note = $alsaevent[$#alsaevent][1];
 		foreach my $j ($[ .. $#Delays) {
 			$cumulative_delay += $Delays[$j]/1000;
        		my $secs  = $now + $cumulative_delay;
@@ -404,9 +378,7 @@ if ($RealTimeMode) {
 					if ($quietenedvol < 1) { $quietenedvol = 1; }
 					$alsaevent[$#alsaevent][2] = $quietenedvol;
 				}
-				if ($pitch_delta{$Echoes[$j]}) {  # 3.7
-					$alsaevent[$#alsaevent][1] += $pitch_delta{$Echoes[$j]};
-				}
+				$alsaevent[$#alsaevent][1] = $dry_note + $PitchDelta[$j]; #4.0
 				my $rc = MIDI::ALSA::output(@alsaevent);
 			}
 		}
@@ -595,274 +567,334 @@ sub gotoxy { my $newcol = shift; my $newrow = shift;
 # ===================================================================
 
 # we're in MIDI-file mode (not RealTime-mode) ...
+# 20120908 work in score form :-)
 eval 'require MIDI'; if ($@) {
 	die "you'll need to install the MIDI::Perl module from www.cpan.org\n";
 }
 import MIDI;
-my $opus = MIDI::Opus->new({ 'from_file' => $ARGV[$[] || '-'});
-my $TPQ = $opus->ticks() || 96; # MIDI Ticks Per Crochet
-my $newopus;
-my $dt_backlog = 0; # if a note_off is suppressed, we remember its ticks
+my @Score = file2ms_score($ARGV[$[] || '-');
+my @Track = @{$Score[$[+1]};
+my @NewTrack = ();  # 
+my $Now   = 1;
 
-foreach my $track ($opus->tracks()) {  # there will usually be only one
-	my $events_r = $track->events_r();
-
-	my $millisecs = 0.0;  # elapsed time
-	my %start_time; # @{$start_time{$cha}{$note}} = ($millisecs1,$millisecs2..)
-	my %pending;    # note_on and note_off events which haven't yet
-	                # been output to @$newevents
-	                # HoL $pending{$millisecs} = [$evtype,$cha,$note,$vol]
-	                # with millisecs uniquised by adding hundredths as needed.
-	my %unfinished; # note_on events which don't yet have a corresponding
-	                # note_off, because the dry note hasn't finished yet.
-	                # $unfinished{$millisecs}=['note_on',$echo_cha,$note,$vol]
-	my %started_by; # the channel that started the note_on event in unfinished
-	                # $started_by{$millisecs} = $dry_cha;
-	my $miditempo = 1000000; # default cro=60
-	@newevents    = ();
-	%nesting      = ();
-	$dt_backlog   = 0;
-
-	foreach my $channel (keys %pitch_wheel) {
-		push @newevents,
-		 ['pitch_wheel_change',0,$channel,$pitch_wheel{$channel}];
-	}
-
-	foreach my $event (@{$events_r}) {
-		# these varnames are only accurate for note_on and note_off events:
-		my ($evtype, $dticks, $cha, $note, $vol) = @$event;
-		my $dmillisecs = $dticks * $miditempo * 0.001 / $TPQ;
-		$millisecs += $dmillisecs;
-		if ($Debug) {
-			printf STDERR "\nEVENT %s dticks=%g dmillisecs=%g millisecs=%g",
-			$evtype,$dticks,$dmillisecs,$millisecs;
-		}
-
-		# Go through all remembered echo note_on and echo note_off events;
-		# those that are now overdue, work out how many ticks before $event,
-		# set their dtimes, push them onto @newevents, forget them,
-		# and reduce ${$event}[$[+1] accordingly
-		# We also do something like this on loop-exit ...
-		my $burned_ticks = 0;
-		# these are the delayed echos
-		foreach my $t (sort {$a<=>$b} keys %pending) {
-			if ($t > $millisecs) { last; }
-			my ($evtype,$cha,$note,$vol) = @{$pending{$t}};
-			if ($Debug) {
-				printf STDERR "\n reviewing pending t=%g", $t;
-				print STDERR " evtype=$evtype cha=$cha note=$note";
-			}
-			my $ticksbeforenow = ($millisecs-$t) * $TPQ / ($miditempo * 0.001);
-			my $dt = $dticks - $ticksbeforenow;
-			if ($dt < 0) { $dt = 0; }
-			$dt = int (0.5 + $dt);
-			delete $pending{$t}; # NB difference between pending and unfinished
-			$dticks -= $dt;
-			$burned_ticks += $dt;
-			if ($pitch_delta{$cha}) { $note += $pitch_delta{$cha} }   # 3.2
-			if ($evtype eq 'note_off')    { &note_off($dt, $cha, $note, $vol);
-			} elsif ($evtype eq 'note_on') { &note_on($dt, $cha, $note, $vol);
-			}
-		}
-
-		if ($evtype eq 'note_on') {  # this is a dry-note_on, not an echo
-			# if channel OK, remember this note has started and not yet finished
-			my $unique_ms;
-			if ($Channel{$cha} && (!%EchoNotes || $EchoNotes{$note})) {
-				my $quietenedvol = $vol;
-				my $cumulative_delay = 0;
-				foreach my $i ($[ .. $#Delays) {
-					$cumulative_delay += $Delays[$i];
-					$unique_ms = $millisecs+$cumulative_delay;
-					while ($pending{$unique_ms}) { $unique_ms += 0.01; }
-					$quietenedvol -= $Softenings[$i];
-					if ($quietenedvol < 1) { $dt_backlog += $dticks; next; }
-					my $echocha;
-					if (defined $Echoes[$i]) { $echocha = $Echoes[$i];
-					} else { $echocha = $cha;
-					}
-					$pending{$unique_ms} =
-					 [$evtype,$echocha,$note,$quietenedvol];
-					$unfinished{$unique_ms} =
-					 [$evtype,$echocha,$note,$quietenedvol];
-					$started_by{$unique_ms}=$cha;
-					if ($Debug) {
-						printf STDERR "\n new unfinished{%g}",$unique_ms;
-						print STDERR "=[$evtype,$echocha,$note,$quietenedvol]";
-						printf STDERR "\n new pending{%g}",$unique_ms;
-						print STDERR "=[$evtype,$echocha,$note,$quietenedvol]";
-					}
-				}
-			}
-			&note_on($dticks,$cha,$note,$vol);
-			push @{$start_time{$cha}{$note}}, $millisecs;
-			if ($Debug) {
-				printf STDERR "\n new start_time{$cha}{$note}=%g",$millisecs;
-				print STDERR "\n list of start_times{$cha}{$note} is:";
-				foreach (@{$start_time{$cha}{$note}}) {
-					printf STDERR " %g",$_;
-				}
-			}
-		} elsif ($evtype eq 'note_off') { # a dry-note_off, not echo note_off
-			if ($Debug) {
-				print STDERR "\n It's a note_off cha=$cha note=$note vol=$vol";
-			}
-			my %unfinished_on_this_note;
-			if (@{$start_time{$cha}{$note}}) {
-				# calculate intended note-duration, and remember for the echoes
-				my $start_time=shift @{$start_time{$cha}{$note}}; #NO,not dry!
-				my $duration = $millisecs - $start_time;
-				if ($Debug) {
-					printf STDERR " start_time=%g duration=%g",
-					 $start_time, $duration;
-					print STDERR
-					 "\n after shift, list of start_times{$cha}{$note} is:";
-					foreach (@{$start_time{$cha}{$note}}) {
-						printf STDERR " %g",$_;
-					}
-				}
-
-				%unfinished_on_this_note = ();
-				foreach my $t (sort keys %unfinished) {
-					if ($Debug) { printf STDERR "\n unfinished{%g}",$t; }
-					my ($u_ev,$u_cha,$u_note,$u_vol) = @{$unfinished{$t}};
-					if ($Debug) {
-						print STDERR " u_ev=$u_ev u_cha=$u_cha";
-						print STDERR " u_note=$u_note u_vol=$u_vol";
-						print STDERR " started_by=$started_by{$t}";
-					}
-					if($u_ev eq 'note_on' && $started_by{$t} eq $cha
-					 && $u_note eq $note){
-						$unfinished_on_this_note{$t} =
-						 [$u_ev,$u_cha,$u_note,$u_vol];
-						if ($Debug) {
-					 printf STDERR "\n unfinished_on_this_note{%g} $u_ev",$t;
-						}
-					}
-				}
-				# find the first `scalar @Delays` unfinished note_ons on this
-				# note and put into %pending the corresponding note_off events:
-				my $i = 1; my $n = scalar @Delays;
-				foreach my $t (sort keys %unfinished_on_this_note) {
-					last if $i > $n;
-					my $unique_ms = $t + $duration;
-					if ($Debug) {
-					printf STDERR "\n t=%g duration=$duration", $t, $duration;
-					}
-					while ($pending{$unique_ms}) { $unique_ms += 0.01; }
-					my $echocha = ${$unfinished_on_this_note{$t}}[$[+1];
-					$pending{$unique_ms} = ['note_off', $echocha, $note, $vol];
-					delete $unfinished{$t};
-					delete $started_by{$t};
-					if ($Debug) {
-						printf STDERR "\n new pending{%g}", $unique_ms;
-						print STDERR "=[note_off,$echocha,$note,$vol]";
-					}
-					$i++;
-				}
-				&note_off($dticks,$cha,$note,$vol);
-			} else {
-				if ($Channel{$cha} && $Debug) {
-				print STDERR "\n note_off without note :-( cha=$cha note=$note";
-				} else {
-					&note_off($dticks,$cha,$note,$vol);
-				}
-			}
-		} else {
-			if ($evtype eq 'set_tempo') { $miditempo = ${$event}[$[+2]; }
-			${$event}[$[+1] -= ($burned_ticks-$dt_backlog);
-			push @newevents, $event;
-			if ($Channel{$cha} && $evtype eq 'pitch_wheel_change') {
-				my $i = $[; foreach (@Delays) {
-					my $echocha; if (defined $Echoes[$i]) {
-						$echocha = $Echoes[$i];
-					} else { $echocha = $cha;
-					}
-					if ($pitch_wheel{$echocha}) {
-						push @newevents, [ 'pitch_wheel_change', 0, $echocha,
-					 	${$event}[$[+3] + $pitch_wheel{$echocha} ];
-					}
-					$i++;
-				}
-			}
-			$dt_backlog = 0;
-		}
-		if ($Debug) { print STDERR "\n"; }
-	}
-	# output remaining pending events, the final echoes...
-	foreach my $t (sort keys %pending) {
-		my ($evtype,$cha,$note,$vol) = @{$pending{$t}};
-		my $ticksafternow = ($t-$millisecs) * $TPQ / ($miditempo * 0.001);
-		my $dt = $ticksafternow;
-		if ($dt < 0) { $dt = 0; }
-		$dt = int (0.5 + $dt);
-		if ($Debug) {
-	printf STDERR "\nREMAINING: t=%g evtype=$evtype cha=$cha note=$note", $t;
-	printf STDERR " ticksafternow=%g dt=$dt",$ticksafternow;
-		}
-		if ($evtype eq 'note_on') {       &note_on($dt, $cha, $note, $vol);
-		} elsif ($evtype eq 'note_off') { &note_off($dt, $cha, $note, $vol);
-		} else { push @newevents, [$evtype, $dt, $cha, $note, $vol];
-		}
-		$millisecs = $t;  # ? kddp ?
-	}
-
-	# this bit copied from muscript:
-	my $newtrack = MIDI::Track->new( {'events'=>\@newevents} );
-	if (!$newtrack) { die "MIDI::Track->new failed\n"; }
-	$newopus = MIDI::Opus->new(
-	 {'format'=>0,'ticks'=>$TPQ,'tracks'=>[$newtrack]} );
-	if (!$newopus) { die "MIDI::Opus->new failed\n"; }
-
+foreach my $cha (keys %PitchWheel) {
+	push @NewTrack, ['pitch_wheel_change',$Now,$cha,$PitchWheel{$cha}];
+	$Now = $Now + 1;
 }
-if ($Debug) {
-	print STDERR "\n",'-'x60,"\n";$newopus->dump({'dump_tracks'=>1}); exit;
+foreach my $i ($[..$#Patches) {   # 3.9
+	push @NewTrack, ['patch_change',$Now,$Echoes[$i],$Patches[$i]];
+	$Now = $Now + 1;
 }
-$newopus->write_to_file( '>-' );
+foreach my $eventref (@Track) {
+	push @NewTrack, $eventref;   # straight-through
+	my @event = @$eventref;
+	if ($event[$[] eq 'note') {  # this is a dry-note
+		my ($evtype, $time, $duration, $cha, $note, $vol) = @event;
+		if ($Channel{$cha} && (!%EchoNotes || $EchoNotes{$note})) {
+			my $quietenedvol = $vol;
+			my $cumulative_delay = 0;
+			foreach my $i ($[ .. $#Delays) {
+				my @new_event = ( @event );   # make a new copy
+				$cumulative_delay += $Delays[$i];
+				$new_event[$[+1] = $time + $cumulative_delay;
+				if (defined $Echoes[$i]) { $new_event[$[+3] = $Echoes[$i];
+				} else { $new_event[$[+3] = $cha;
+				}
+				$new_event[$[+4] = $note + $PitchDelta[$i];
+				$quietenedvol -= $Softenings[$i];
+				if ($quietenedvol < 1) { next; }
+				$new_event[$[+5] = $quietenedvol;
+				push @NewTrack, \@new_event;   # time-order doesn't matter :-)
+			}
+		}
+	} elsif ($event[$]] eq 'pitch_wheel_change') {
+		my ($evtype, $time, $cha, $val) = @event;
+		if ($Channel{$cha}) {
+			my $cumulative_delay = 0;
+			foreach my $i ($[ .. $#Delays) {
+				my @new_event = ( @event );   # make a new copy
+				$cumulative_delay += $Delays[$i];
+				$new_event[$[+1] = $time + $cumulative_delay;
+				my $echocha = $cha;
+				if (defined $Echoes[$i]) { $echocha = $Echoes[$i]; }
+				$new_event[$[+2] = $echocha;
+				if ($PitchWheel{$echocha}) { push @NewTrack, \@new_event; }
+			}
+		}
+	} elsif ($event[$]] eq 'control_change') {
+		my ($evtype, $time, $cha, $cc, $val) = @event;
+		if ($Channel{$cha} and $DoEchoCC{$cc}) {
+			my $cumulative_delay = 0;
+			foreach my $i ($[ .. $#Delays) {
+				my @new_event = ( @event );   # make a new copy
+				$cumulative_delay += $Delays[$i];
+				$new_event[$[+1] = $time + $cumulative_delay;
+				my $echocha = $cha;
+				if (defined $Echoes[$i]) { $echocha = $Echoes[$i]; }
+				$new_event[$[+2] = $echocha;
+				push @NewTrack, \@new_event;
+			}
+		}
+	}
+}
+score2file('-', 1000,\@NewTrack);
 
 #--------------------- Non-real-time infrastructure ------------------
 
-sub note_on { my ($dt, $cha, $note, $vol) = @_;
-	if (! $note) { die "Bug: note_on called with dt=$dt cha=$cha note=0\n"; }
-	if ($Debug) {
-		printf STDERR "\n sub note_on dt=%g cha=$cha note=$note vol=$vol", $dt;
-	}
-	push @newevents, ['note_on', $dt+$dt_backlog, $cha, $note, $vol];
-	$dt_backlog = 0;
-	if ($Channel{$cha} && (!%EchoNotes || $EchoNotes{$note})) {
-		$nesting{$cha}{$note} ++;
+#    api_for_perl.txt    -    Peter Billam 2012
+#
+# This bit of Perl code will wrap the CPAN MIDI module
+#   http://search.cpan.org/perldoc?MIDI
+# so as to present a calling-interface compatible with the Lua module
+#   http://www.pjb.com.au/comp/lua/MIDI.html
+# and the Python module
+#   http://www.pjb.com.au/midi/MIDI.html
+#
+# This code is used in midisox_pl
+#   http://www.pjb.com.au/midi/midisox.html
+# and in midiedit
+#   http://www.pjb.com.au/midi/midiedit.html
+#
+# The original is at
+#   http://www.pjb.com.au/midi/free/api_for_perl.txt
+
+#------------ MIDI infrastructure from midisox_pl ------------
+
+sub round   { my $x = $_[$[];
+	if ($x > 0.0) { return int ($x + 0.5); }
+	if ($x < 0.0) { return int ($x - 0.5); }
+	return 0;
+}
+sub deepcopy {
+	use Storable;
+	if (1 == @_ and ref($_[$[])) { return Storable::dclone($_[$[]);
+	} else { my $b_ref = Storable::dclone(\@_); return @$b_ref;
 	}
 }
-sub note_off { my ($dt, $cha, $note, $vol) = @_;
-	if (!$note) { die "Bug: note_off called with dt=$dt cha=$cha note=0\n"; }
-	if ($Debug) {
-		print STDERR "\n sub note_off: dt=$dt cha=$cha note=$note vol=$vol";
-		print " nesting=$nesting{$cha}{$note} dt_backlog=$dt_backlog";
-		print " Nesting=$Nesting";
+sub vol_mul {
+	my $vol = $_[$[] || 100;
+	my $mul = $_[$[+1] || 1.0;
+	my $new_vol = round($vol*$mul);
+	if ($new_vol < 0) { $new_vol = 0 - $new_vol; }
+	if ($new_vol > 127) { $new_vol = 127;
+	} elsif ($new_vol < 1) { $new_vol = 1; # some synths see vol=0 as default
 	}
-	if ($Channel{$cha} && (!%EchoNotes || $EchoNotes{$note})) {
-		if ($nesting{$cha}{$note} < 1.5) {
-			push @newevents, ['note_off', $dt+$dt_backlog, $cha, $note, $vol];
-			$nesting{$cha}{$note} = 0;
-			# delete $start_time{$cha}{$note};
-			$dt_backlog = 0;
-		} else {
-			$nesting{$cha}{$note} --;
-			if ($Nesting) {
-				push @newevents, ['note_off', $dt+$dt_backlog,$cha,$note,$vol];
-				$dt_backlog = 0;
-			} else { 
-				$dt_backlog += $dt;
-			}
-			if ($Debug) {
-		print STDERR "\n after decrementing, nesting=$nesting{$cha}{$note}";
-			}
+	return $new_vol;
+}
+
+#---------------------- Encoding stuff -----------------------
+
+sub opus2file {
+	my ($filename, @opus) = @_;
+	my $format = 1;
+	if (2 == @opus) { $format = 0; }
+	my $cpan_opus = MIDI::Opus->new(
+		{'format'=>$format, 'ticks'  => 1000, 'tracks' => []});
+	my @list_of_tracks = ();
+	my $itrack = $[+1;
+	while ($itrack <= $#opus) {
+		push @list_of_tracks,
+		 MIDI::Track->new({ 'type' => 'MTrk', 'events' => $opus[$itrack]});
+		$itrack += 1;
+	}
+	$cpan_opus->tracks(@list_of_tracks);
+	if ($filename eq '-') {
+		$cpan_opus->write_to_file( '>-' );
+	} elsif ($filename eq '-d') {
+		$PID = fork;
+		if (! $PID) {
+			if (!open(P, '| aplaymidi -')) { die "can't run aplaymidi: $!\n"; }
+			$cpan_opus->write_to_handle( *P{IO}, {} );
+			close P;
+			exit 0;
 		}
 	} else {
-		push @newevents, ['note_off', $dt+$dt_backlog, $cha, $note, $vol];
-		$dt_backlog = 0;
+		$cpan_opus->write_to_file($filename);
 	}
 }
+
+sub score2opus {
+	if (2 > @_) { return (1000, []); }
+	my ($ticks, @tracks) = @_;
+	my @opus = ($ticks,);
+	my $itrack = $[;
+	while ($itrack <= $#tracks) {
+		my %time2events = ();
+		foreach my $scoreevent_ref (@{$tracks[$itrack]}) {
+			my @scoreevent = @{$scoreevent_ref};
+			if ($scoreevent[0] eq 'note') {
+				my @note_on_event = ('note_on',$scoreevent[1],
+				 $scoreevent[3],$scoreevent[4],$scoreevent[5]);
+				my @note_off_event = ('note_off',$scoreevent[1]+$scoreevent[2],
+				 $scoreevent[3],$scoreevent[4],$scoreevent[5]);
+				if ($time2events{$note_on_event[1]}) {
+				   push @{$time2events{$note_on_event[1]}}, \@note_on_event;
+				} else {
+				   @{$time2events{$note_on_event[1]}} = (\@note_on_event,);
+				}
+				if ($time2events{$note_off_event[1]}) {
+				   push @{$time2events{$note_off_event[1]}}, \@note_off_event;
+				} else {
+				   @{$time2events{$note_off_event[1]}} = (\@note_off_event,);
+				}
+			} elsif ($time2events{$scoreevent[1]}) {
+			   push @{$time2events{$scoreevent[1]}}, \@scoreevent;
+			} else {
+			   @{$time2events{$scoreevent[1]}} = (\@scoreevent,);
+			}
+		}
+
+		my @sorted_events = (); # list of event_refs sorted by time
+		for my $time (sort {$a <=> $b} keys %time2events) {
+			push @sorted_events, @{$time2events{$time}};
+		}
+
+		my $abs_time = 0;
+		for my $event_ref (@sorted_events) {  # convert abstimes => deltatimes
+			my $delta_time = ${$event_ref}[1] - $abs_time;
+			$abs_time = ${$event_ref}[1];
+			${$event_ref}[1] = $delta_time;
+		}
+		push @opus, \@sorted_events;
+		$itrack += 1;
+	}
+	return (@opus);
+}
+
+sub score2file { my ($filename, @score) = @_;
+	my @opus = score2opus(@score);
+	return opus2file($filename, @opus);
+}
+
+#--------------------------- Decoding stuff ------------------------
+
+sub file2opus {
+	my $opus_ref;
+	if ($_[$[] eq '-') {
+		$opus_ref = MIDI::Opus->new({'from_handle' => *STDIN{IO}});
+	} elsif ($_[$[] =~ /^[a-z]+:\//) {
+		eval 'require LWP::Simple'; if ($@) {
+			die "you need to install libwww-perl from www.cpan.org\n";
+		}
+		$midi = LWP::Simple::get($_[$[]);
+		if (! defined $midi) { die("can't fetch $_[$[]\n"); }
+		open(P, '<', \$midi) or die("can't open FileHandle, need Perl5.8\n");
+		$opus_ref = MIDI::Opus->new({'from_handle' => *P{IO}});
+		close P;
+	} else {
+		$opus_ref = MIDI::Opus->new({'from_file' => $_[$[]});
+	}
+	my @my_opus = (${$opus_ref}{'ticks'},);
+	foreach my $track ($opus_ref->tracks) {
+		push @my_opus, $track->events_r;
+	}
+	return (@my_opus);
+}
+
+sub opus2score {  my ($ticks, @opus_tracks) = @_;
+	if (!@opus_tracks) { return (1000,[],); }
+	my @score = ($ticks,);
+	my @tracks = deepcopy(@opus_tracks); # couple of slices probably quicker...
+	foreach my $opus_track_ref (@tracks) {
+		my $ticks_so_far = 0;
+		my @score_track = ();
+		my %chapitch2note_on_events = ();    # 4.4 XXX!!! Must be by Channel !!
+		foreach $opus_event_ref (@{$opus_track_ref}) {
+			my @opus_event = @{$opus_event_ref};
+			$ticks_so_far += $opus_event[1];
+			if ($opus_event[0] eq 'note_off'
+			 or ($opus_event[0] eq 'note_on' and $opus_event[4]==0)) { # YY
+				my $cha = $opus_event[2];
+				my $pitch = $opus_event[3];
+				my $key = $cha*128 + $pitch;
+				if ($chapitch2note_on_events{$key}) {
+					my $new_event_ref = shift @{$chapitch2note_on_events{$key}};
+					${$new_event_ref}[2] = $ticks_so_far - ${$new_event_ref}[1];
+					push @score_track, $new_event_ref;
+				} else {
+				  warn("note_off without a note_on, cha=$cha pitch=$pitch\n");
+				}
+			} elsif ($opus_event[0] eq 'note_on') {
+				my $cha = $opus_event[2];  # 4.4
+				my $pitch = $opus_event[3];
+				my $new_event_ref = ['note', $ticks_so_far, 0,
+				 $cha, $pitch, $opus_event[4]];
+				my $key = $cha*128 + $pitch;
+				push @{$chapitch2note_on_events{$key}}, $new_event_ref;
+			} else {
+				$opus_event[1] = $ticks_so_far;
+				push @score_track, \@opus_event;
+			}
+		}
+		# 4.7 check for unterminated notes, see: ~/lua/lib/MIDI.lua
+		while (my ($k1,$v1) = each %chapitch2note_on_events) {
+			foreach my $new_e_ref (@{$v1}) {
+				${$new_e_ref}[2] = $ticks_so_far - ${$new_e_ref}[1];
+				push @score_track, $new_e_ref;
+				warn("opus2score: note_on with no note_off cha="
+				 . ${$new_e_ref}[3] . ' pitch='
+				 . ${$new_e_ref}[4] . "; adding note_off at end\n");
+			}
+		}
+		push @score, \@score_track;
+	}
+	return @score;
+}
+
+sub file2score {
+	return opus2score(file2opus($_[$[]));
+}
+
+sub file2ms_score {
+	my @score = opus2score(to_millisecs(file2opus($_[$[])));
+	# must merge the tracks of a format-2 file; could perhaps even
+	# extend the @event to indicate which Track it originated in...
+	my $itrack = $#score; while ($itrack > ($[+1.5)) {
+		foreach my $event_ref (@{$score[$itrack]}) {
+			push @{$score[$[+1]}, $event_ref; # push them onto track 1
+		}
+		$itrack -= 1;
+		$#score = $itrack;  # and jettison the last track
+	}
+	return @score;
+}
+
+#------------------------ Other Transformations ---------------------
+
+sub to_millisecs {
+	my @old_opus = @_;
+	if (!@old_opus) {
+		return (1000,[],);
+	}
+	my $old_tpq  = $_[$[];
+	my @new_opus = (1000,);
+	my $millisec_per_old_tick = 1000.0 / $old_tpq;  # float: will round later
+	$itrack = $[+1;
+	while ($itrack <= $#old_opus) {
+		my $millisec_so_far = 0.0;
+		my $previous_millisec_so_far = 0.0;
+		my @new_track = (['set_tempo',0,1000000],);  # new "crochet" is 1 sec
+		foreach my $old_event_ref (@{$old_opus[$itrack]}) {
+			my @old_event = @{$old_event_ref};
+			if ($old_event[0] eq 'note') {
+				die "to_millisecs needs an opus, not a score\n";
+			}
+			my @new_event = deepcopy(@old_event);  # copy.deepcopy ?
+			$millisec_so_far += ($millisec_per_old_tick * $old_event[1]);
+			$new_event[1] = round($millisec_so_far-$previous_millisec_so_far);
+			if ($old_event[0] eq 'set_tempo') {
+				$millisec_per_old_tick = $old_event[2] / (1000.0 * $old_tpq);
+			} else {
+				$previous_millisec_so_far = $millisec_so_far;
+				push @new_track, \@new_event;
+			}
+		}
+		push @new_opus, \@new_track;
+		$itrack += 1;
+	}
+	return @new_opus;
+}
+
 
 sub usecs {
 	my ($secs, $usecs) = Time::HiRes::gettimeofday();
@@ -885,7 +917,6 @@ midiecho - Simulates tape-delay echo, on MIDI files or on real-time MIDI
  midiecho -c 3 -d 450,450 -s 30 fn  # each echo is (MIDI) 30 softer
  midiecho -c 2 -d 450 -e 5 -s 30 fn # the echo appears on channel 5
  midiecho -c 3 -d 40 -e 4 -w 10 -s 0    # Automatic-Double-Tracking
- midiecho -c 1 -d 350 -s 35 -S # stateless synth doesn't count note_ons
  midiecho filename          #  defaults: midiecho -c 0 -d 300 -s 30
  muscript -midi f.txt | midiecho -c 1 -d 300 -s 25 -e 2 >f.mid
 
@@ -1086,9 +1117,6 @@ If an echo ends up with zero volume or less, then it is suppressed.
 
 If -s is not specified, by default each echo is 30 softer
 than the previous.
-
-The -q option works the same as -s, but is deprecated
-because it conflicts with the B<q>=I<quit> command in real-time mode.
 
 =item I<-S>
 

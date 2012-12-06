@@ -28,8 +28,8 @@
 
 use Time::HiRes;  # 5.3
 
-my $Version = '5.3';  # time_travel works both forwards and backwards
-my $VersionDate = '01oct2012';
+my $Version = '5.4';  # replay_setup outputs bankchange before the patchchange
+my $VersionDate = '28oct2012';
 my $UseCurses = 1;
 my $TopKeystrokesLine;   # set by display_keystrokes
 my $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'};
@@ -840,6 +840,11 @@ sub file_menu {   # 4.8
 	my $c = getch(); clrtobot(); echo();
 	if ($c eq 'f') {
 		addl($LINES-3,$x,'fork');
+		if ($FileIsChanged) {
+			addl($LINES-2,4,"save $File first (y/n) ? ");
+			my $c = getch();
+			if ($c eq 'y' or $c eq 'w') { score2file($File, 1000,\@Track); }
+		}
 		my $new_filename = $File;
 		foreach $s ('a'..'z') {
 			$new_filename = $File;
@@ -1091,7 +1096,7 @@ sub insert_event {
 	my $t = $Track[$Ievent][$[+1] - $gap_to_inserted_event;   # 4.8
 	if ($t < 0) { $t = 0; }
 	my @InsertEvent = ($event_type, $t);
-	if ($event_type eq 'note') { push @InsertEvent, 0,60,100;
+	if ($event_type eq 'note') { push @InsertEvent, 200,0,60,100;  # 5.4
 	} elsif ($event_type eq 'patch_change') { push @InsertEvent, 0, 0;
 	} elsif ($event_type eq 'control_change') { push @InsertEvent, 0, 10, 64;
 	} elsif ($event_type eq 'marker') { push @InsertEvent, 'NEW SECTION';
@@ -1207,7 +1212,7 @@ sub new_file {
 	addl($LINES-4,round(0.4*($COLS-length($s))),$s);
 	timeout(-1);
 	my $c = getch();
-	if ($c eq 'y') { score2file($File, 1000,\@Track); }
+	if ($c eq 'y' or $c eq 'w') { score2file($File, 1000,\@Track); }
 	#	move($LINES-4,0); clrtobot();
 }
 
@@ -1220,7 +1225,7 @@ sub quit {
 	addl($LINES-4,round(0.4*($COLS-length($s))),$s);
 	timeout(-1);
 	my $c = getch();
-	if ($c eq 'y') { score2file($File, 1000,\@Track); exit 0;
+	if ($c eq 'y' or $c eq 'w') { score2file($File, 1000,\@Track); exit 0;
 	} elsif ($c eq 'n') { exit 0;
 	}
 	display_keystrokes();
@@ -1256,10 +1261,14 @@ sub replay_setup { my ($from, $to) = @_;
 		my @alsaevent = MIDI::ALSA::pgmchangeevent($cha,$pat,$time+0.001);
 		MIDI::ALSA::output(@alsaevent);
 	}
+	# 20121018
 	while (my ($cha_cc,$val) = each %cha_cc2latest_val) {
 		my ($cha,$cc) = split /,/, $cha_cc, 2;
 		my ($status, $time,$events) = MIDI::ALSA::status();
-		my @alsaevent = MIDI::ALSA::controllerevent($cha,$cc,$val,$time+0.001);
+		# the bank-change events must come _before_ the patch-change !
+		# the other controller-events must come after the patch-change ...
+		if (($cc != 0) and ($cc != 32)) { $time = $time + 0.002; }  # 5.4
+		my @alsaevent = MIDI::ALSA::controllerevent($cha,$cc,$val,$time);
 		MIDI::ALSA::output(@alsaevent);
 	}
 	if (%cha2latest_patch) {
@@ -2095,6 +2104,7 @@ so you have to keep track of matching note_ons and note_offs.
 
 =head1 CHANGES
 
+ 5.4, 20121028, replay_setup outputs bankchange before the patchchange
  5.3, 20121001, replay_setup (hence time_travel) works forwards and backwards
  5.2, 20120930, KEY_UP uses event_travel() to cope with dt=0
  5.1, 20120930, works with MIDI::ALSA 1.15; PolyOn=127 fixed

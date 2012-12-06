@@ -1,3 +1,4 @@
+20121129 1.16 test.pl prints better diagnostics if it fails
 20120930 1.15 output() timestamp and duration in floating-point seconds
 20120925      (dis)?connect(from|to) return undef if parse_address fails
 20111112 1.14 but output() does broadcast if destination is self

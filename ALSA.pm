@@ -10,7 +10,8 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.15';
+$VERSION = '1.16';  # gives a -w warning, but $VERSION.='' confuses CPAN
+# 20121206 1.16 queue_id; test.pl prints better diagnostics
 # 20120930 1.15 output() timestamp and duration in floating-point seconds
 # 20111112 1.14 but output() does broadcast if destination is self
 # 20111108 1.13 repair version number
@@ -27,7 +28,6 @@ $VERSION = '1.15';
 # 20110213 1.02 add disconnectto and disconnectfrom
 # 20110211 1.01 first released version
 
-# gives a -w warning, but I'm afraid $VERSION .= ''; would confuse CPAN
 require Exporter;
 require DynaLoader;
 @ISA = qw(Exporter DynaLoader);
@@ -220,6 +220,10 @@ sub output { my @ev = @_;
 		  $data[0], $data[1], $data[2],$data[3],$data[4]||0,$data[5]||0,q{});
 	}
 }
+sub queue_id {
+	my $rc = &xs_queue_id();
+	return $rc;
+}
 sub start {
 	my $rc = &xs_start();
 	return $rc;
@@ -235,9 +239,11 @@ sub syncoutput {
 }
 # ---------------- public functions from alsamidi.py  -----------------
 # 1.15 the SND_SEQ_TIME_STAMP_REALs are now superfluous
+# 1.16 use xs_queue_id for the queue_id
 sub noteevent { my ($ch,$key,$vel,$start,$duration ) = @_;
+	my $qid = &xs_queue_id();   # 1.16
 	return ( SND_SEQ_EVENT_NOTE, SND_SEQ_TIME_STAMP_REAL,
-		0, 0, $start, [ 0,0 ], [ 0,0 ], [ $ch,$key,$vel,$vel,$duration ] );
+		0, $qid, $start, [ 0,0 ], [ 0,0 ], [ $ch,$key,$vel,$vel,$duration ] );
 		# [$ch,$key,$vel, $vel, int(0.5 + 1000*$duration) ] ); pre-1.15
 }
 sub noteonevent { my ($ch,$key,$vel ) = @_;
@@ -257,9 +263,9 @@ sub pgmchangeevent { my ($ch,$value,$start ) = @_;
 		0, SND_SEQ_QUEUE_DIRECT, 0,
 		[ 0,0 ], [ 0,0 ], [$ch, 0, 0, 0, 0,$value ] );
 	} else {
+		my $qid = &xs_queue_id();   # 1.16
 		return ( SND_SEQ_EVENT_PGMCHANGE, SND_SEQ_TIME_STAMP_REAL,
-		0, 0, $start,
-		[ 0,0 ], [ 0,0 ], [$ch, 0, 0, 0, 0,$value ] );
+		0, $qid, $start, [ 0,0 ], [ 0,0 ], [$ch, 0, 0, 0, 0,$value ] );
 	}
 }
 sub pitchbendevent { my ($ch,$value,$start ) = @_;
@@ -269,8 +275,9 @@ sub pitchbendevent { my ($ch,$value,$start ) = @_;
 		0, SND_SEQ_QUEUE_DIRECT, 0,
 		[ 0,0 ], [ 0,0 ], [$ch, 0,0,0,0, $value ] );
 	} else {
+		my $qid = &xs_queue_id();   # 1.16
 		return ( SND_SEQ_EVENT_PITCHBEND, SND_SEQ_TIME_STAMP_REAL,
-		0, 0, $start,
+		0, $qid, $start,
 		[ 0,0 ], [ 0,0 ], [$ch, 0,0,0,0, $value ] );
 	}
 }
@@ -281,8 +288,9 @@ sub controllerevent { my ($ch,$key,$value,$start ) = @_;  # 1.05
 		0, SND_SEQ_QUEUE_DIRECT, 0,
 		[ 0,0 ], [ 0,0 ], [$ch, 0,0,0, $key, $value ] );
 	} else {
+		my $qid = &xs_queue_id();   # 1.16
 		return ( SND_SEQ_EVENT_CONTROLLER, SND_SEQ_TIME_STAMP_REAL,
-		0, 0, $start,
+		0, $qid, $start,
 		[ 0,0 ], [ 0,0 ], [$ch, 0,0,0, $key, $value ] );
 	}
 }
@@ -293,9 +301,9 @@ sub chanpress { my ($ch,$value,$start ) = @_;
 		0, SND_SEQ_QUEUE_DIRECT, 0,
 		[ 0,0 ], [ 0,0 ], [$ch, 0,0,0,0, $value ] );
 	} else {
+		my $qid = &xs_queue_id();   # 1.16
 		return ( SND_SEQ_EVENT_CHANPRESS, SND_SEQ_TIME_STAMP_REAL,
-		0, 0, $start,
-		[ 0,0 ], [ 0,0 ], [$ch, 0,0,0,0, $value ] );
+		0, $qid, $start, [ 0,0 ], [ 0,0 ], [$ch, 0,0,0,0, $value ] );
 	}
 }
 sub sysex { my ($ch,$value,$start ) = @_;
@@ -305,12 +313,11 @@ sub sysex { my ($ch,$value,$start ) = @_;
 	}
 	if (! defined $start) {
 		return ( SND_SEQ_EVENT_SYSEX, SND_SEQ_TIME_STAMP_REAL,
-		0, SND_SEQ_QUEUE_DIRECT, 0,
-		[ 0,0 ], [ 0,0 ], ["\xF0$value\xF7",] );
+		0, SND_SEQ_QUEUE_DIRECT, 0, [ 0,0 ], [ 0,0 ], ["\xF0$value\xF7",] );
 	} else {
+		my $qid = &xs_queue_id();   # 1.16
 		return ( SND_SEQ_EVENT_SYSEX, SND_SEQ_TIME_STAMP_REAL,
-		0, 0, $start,
-		[ 0,0 ], [ 0,0 ], ["\xF0$value\xF7",] );
+		0, $qid, $start, [ 0,0 ], [ 0,0 ], ["\xF0$value\xF7",] );
 	}
 }
 
@@ -658,6 +665,8 @@ For SYSEX events, the data array contains just one element:
 the byte-string, including any F0 and F7 bytes.
 For most other events,  the elements are
 ($channel, unused,unused,unused, $param, $value)
+
+The I<channel> element is always 0..15
 
 =item inputpending()
 

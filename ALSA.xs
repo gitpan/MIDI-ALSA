@@ -384,6 +384,17 @@ CODE:
 }
 
 int
+xs_queue_id ()
+CODE:
+{
+	/* 1.16 */
+	dMY_CXT;
+	if (MY_CXT.seq_handle == NULL) { XSRETURN(0); }  /* avoid segfaults */
+	ST(0) = sv_2mortal(newSVnv(MY_CXT.queue_id));
+	XSRETURN(1);
+}
+
+int
 xs_start ()
 CODE:
 {

@@ -260,10 +260,18 @@ if (@virmidi <2) {
 } else {
 	print("# running  aconnect -d $virmidi[0] $id:1 ...\n");
 	system("aconnect -d $virmidi[0] $id:1");
-	$rc =  MIDI::ALSA::inputpending();
-	@alsaevent  = MIDI::ALSA::input();
-	ok($alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_PORT_UNSUBSCRIBED,
-	 'SND_SEQ_EVENT_PORT_UNSUBSCRIBED event received');
+	foreach (1..5) {  # 1.17
+		$rc =  MIDI::ALSA::inputpending();
+		@alsaevent  = MIDI::ALSA::input();
+		if ($alsaevent[0] != MIDI::ALSA::SND_SEQ_EVENT_SENSING()) { last; }
+		my $cl = join ":", @{$alsaevent[5]};
+		warn "# discarding a SND_SEQ_EVENT_SENSING event from $cl\n";
+	}
+	if (! ok($alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_PORT_UNSUBSCRIBED,
+	 'SND_SEQ_EVENT_PORT_UNSUBSCRIBED event received')) {
+		print "# inputpending returned $rc\n";   # 1.16+
+		print "# alsaevent=".Dumper(\@alsaevent)."\n";   # 1.16+
+	}
 }
 
 $rc = MIDI::ALSA::disconnectto(2,$virmidi[2],0);
@@ -274,7 +282,13 @@ ok($rc, "connectto(2,'$my_name:1') connected to myself by name");
 #system 'aconnect -oil';
 @correct = (11, 1, 0, 1, 2.5, [$id,2], [$id,1], [0, 0, 0, 0, 0, 99] );
 $rc =  MIDI::ALSA::output(@correct);
-@alsaevent  = MIDI::ALSA::input();
+foreach (1..5) {  # 1.17
+	$rc =  MIDI::ALSA::inputpending();
+	@alsaevent  = MIDI::ALSA::input();
+	if ($alsaevent[0] != MIDI::ALSA::SND_SEQ_EVENT_SENSING()) { last; }
+	my $cl = join ":", @{$alsaevent[5]};
+	warn "# discarding a SND_SEQ_EVENT_SENSING event from $cl\n";
+}
 $latency = int(0.5 + 1000 * ($alsaevent[4]-$correct[4]));
 $alsaevent[3] = 1;   # 1.16 sometimes it's 0 ...
 $alsaevent[4] = $correct[4];

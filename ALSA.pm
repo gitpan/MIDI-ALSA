@@ -10,7 +10,8 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.16';  # gives a -w warning, but $VERSION.='' confuses CPAN
+$VERSION = '1.17';  # gives a -w warning, but $VERSION.='' confuses CPAN
+# 20121208 1.17 test.pl handles alsa_1.0.16 quirk
 # 20121206 1.16 queue_id; test.pl prints better diagnostics
 # 20120930 1.15 output() timestamp and duration in floating-point seconds
 # 20111112 1.14 but output() does broadcast if destination is self

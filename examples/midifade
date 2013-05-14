@@ -12,8 +12,8 @@
 # On exit, could print the equivalent muscript, or Perl,Python,or Lua ?
 # Curses interface from midiedit, midi stuff from midikbd.
 
-my $Version      = '1.7';
-my $VersionDate  = '31aug2012';
+my $Version      = '1.8';
+my $VersionDate  = '23mar2013';
 my $OutputPort   = $ENV{'ALSA_OUTPUT_PORTS'};
 my $ColsPerFader = 6;
 
@@ -92,8 +92,8 @@ while (1) {  # the loop
 		if (@Faders) {
 			splice @Faders, $IFader, 1;
 			if ($IFader > $#Faders) { $IFader = $#Faders; }
-			display_screen();
 		}
+		display_screen();
 	} elsif ($c eq 'n')    {
 		my ($c,$m,$v) = new_fader_dialogue();
 		if (defined $m) { add_new_fader($c,$m,$v); }
@@ -235,6 +235,7 @@ sub add_new_fader { my ($c,$m,$v) = @_;
 }
 
 sub display_faders {
+	foreach my $irow (1..$LINES-4) { move($irow, 0); clrtoeol(); } # XXX
 	foreach my $i ($[ .. $#Faders) { display_fader($i); }
 	refresh();
 }
@@ -280,9 +281,7 @@ sub display_fader { my $i = $_[$[];
 		move(0,$x); addstr("$s1 "); # cc-str overwrites client-str if conflict
 	}
 	if ($i == $#Faders) {
-		foreach my $irow (1..$LINES-4) {
-			move($irow, $icol+6); clrtoeol();
-		}
+		foreach my $irow (1..$LINES-4) { move($irow, $icol+6); clrtoeol(); }
 	}
 	move($LINES-4, ($IFader-$[) * $ColsPerFader + 4);
 }
@@ -468,6 +467,7 @@ The B<v> bit is optional; its default value is 64.
 
 =head1 CHANGES
 
+ 1.8, 20130323, D can now delete the only fader
  1.7, 20120831, -o "string" works
  1.6, 20120820, display_clientstr called at start
  1.5, 20111216, if  -o 0  then midifade starts up but connects to nothing

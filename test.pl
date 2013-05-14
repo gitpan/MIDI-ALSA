@@ -12,7 +12,7 @@ use MIDI::ALSA qw(:ALL);
 use Time::HiRes;
 use Data::Dumper;
 $Data::Dumper::Indent = 0;   # 1.16
-use Test::Simple tests => 56;
+use Test::Simple tests => 57;
 
 my @virmidi = virmidi_clients_and_files();
 if (@virmidi < 4) {
@@ -43,6 +43,11 @@ if (! ok($cl == $id, "parse_address('$my_name') returns $id,$po")) {
 	print "# it returned instead: $cl,$po\n";
 }
 
+($cl,$po) = MIDI::ALSA::parse_address('testpl');
+if (! ok($cl == $id, "parse_address('testpl') returns $id,$po")) {
+	print "# it returned instead: $cl,$po\n";
+}
+
 # 20121205 apparently fails on 1.0.22 on Centos.
 #($cl,$po) = MIDI::ALSA::parse_address('testp');
 #if (! ok($cl == $id, "parse_address('testp') returns $id,$po")) {
@@ -59,7 +64,7 @@ if (@virmidi >= 2 ) {
 $rc = MIDI::ALSA::connectfrom(1,133,0);
 ok(! $rc, 'connectfrom(1,133,0) correctly returned 0');
 
-if (@virmidi >= 4 ) {
+if (@virmidi >= 2 ) {
 	$rc = MIDI::ALSA::connectto(2,$virmidi[2],0);
 	ok($rc, "connectto(2,$virmidi[2],0)");
 } else {
@@ -257,6 +262,7 @@ if (@virmidi < 4) {
 if (@virmidi <2) {
 	ok(1, "skipping disconnectfrom()");
 	ok(1, 'skipping SND_SEQ_EVENT_PORT_UNSUBSCRIBED event');
+	ok(1, "skipping disconnectto()");
 } else {
 	print("# running  aconnect -d $virmidi[0] $id:1 ...\n");
 	system("aconnect -d $virmidi[0] $id:1");
@@ -272,10 +278,10 @@ if (@virmidi <2) {
 		print "# inputpending returned $rc\n";   # 1.16+
 		print "# alsaevent=".Dumper(\@alsaevent)."\n";   # 1.16+
 	}
+	# inside the if (@virmidi<2) else {   1.18
+	$rc = MIDI::ALSA::disconnectto(2,$virmidi[2],0);
+	ok($rc, "disconnectto(2,$virmidi[2],0)");
 }
-
-$rc = MIDI::ALSA::disconnectto(2,$virmidi[2],0);
-ok($rc, "disconnectto(2,$virmidi[2],0)");
 
 $rc = MIDI::ALSA::connectto(2,"$my_name:1");
 ok($rc, "connectto(2,'$my_name:1') connected to myself by name");
@@ -322,14 +328,18 @@ $rc = MIDI::ALSA::stop();
 ok($rc,'stop() returns success');
 
 @alsaevent = MIDI::ALSA::noteonevent(15, 72, 100, 2.7);
-@correct = (6,1,0,253,0,[0,0],[0,0],[15,72,100,0,0]);
-ok(Dumper(@alsaevent) eq Dumper(@correct), 'noteonevent()');
+@correct = (6,1,0,$qid,2.7,[0,0],[0,0],[15,72,100,0,0]);
+if (! ok(Dumper(@alsaevent) eq Dumper(@correct), 'noteonevent()')) {
+	print "# alsaevent=".Dumper(\@alsaevent)."\n";   # 1.18
+	print "# correct  =".Dumper(\@correct)."\n";   # 1.18
+}
 
 @alsaevent = MIDI::ALSA::noteoffevent(15, 72, 100, 2.7);
-# print('alsaevent='.Dumper(@alsaevent));
-@correct = (7,1,0,253,0,[0,0],[0,0],[15,72,100,100,0]);
-# print('correct='.Dumper(@correct));
-ok(Dumper(@alsaevent) eq Dumper(@correct), 'noteoffevent()');
+@correct = (7,1,0,$qid,2.7,[0,0],[0,0],[15,72,100,100,0]);
+if (! ok(Dumper(@alsaevent) eq Dumper(@correct), 'noteoffevent()')) {
+	print "# alsaevent=".Dumper(\@alsaevent)."\n";   # 1.18
+	print "# correct  =".Dumper(\@correct)."\n";   # 1.18
+}
 
 @alsaevent  = MIDI::ALSA::noteevent(15, 72, 100, 2.7, 3.1);
 @scoreevent = MIDI::ALSA::alsa2scoreevent(@alsaevent);

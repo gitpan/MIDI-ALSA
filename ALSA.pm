@@ -10,14 +10,17 @@
 package MIDI::ALSA;
 no strict;
 use bytes;
-$VERSION = '1.17';  # gives a -w warning, but $VERSION.='' confuses CPAN
+# this gives a -w warning, but $VERSION.='' confuses CPAN:
+$VERSION = '1.18';
+# 20130514 1.18 parse_address matches startofstring to hide alsa-lib 1.0.24 bug
+# 20130211 1.18 noteonevent and noteoffevent accept a $start parameter
 # 20121208 1.17 test.pl handles alsa_1.0.16 quirk
 # 20121206 1.16 queue_id; test.pl prints better diagnostics
 # 20120930 1.15 output() timestamp and duration in floating-point seconds
 # 20111112 1.14 but output() does broadcast if destination is self
 # 20111108 1.13 repair version number
 # 20111108 1.12 output() does not broadcast if destination is set
-# 20111101 1.11 add parse_address(), and call automatically from connectto() etc
+# 20111101 1.11 add parse_address() and call automatically from connectto() etc
 # 20101024 1.10 crash-proof all xs_ subs if called before client exists
 # 20100624 1.09 $maximum_nports increased from 4 to 64
 # 20100605 1.08 examples include midikbd, midiecho and midiclick
@@ -129,9 +132,24 @@ sub client {
 }
 
 sub parse_address { my ($port_name) = @_;
-    return &xs_parse_address($port_name);
+    my @a = &xs_parse_address($port_name);
+	if (@a) { return @a; }
+	# 1.18 bodge to cover bug introduced in alsa-lib 1.0.24
+	# and fixed 3 years later
+	my ($cli,$por) = split /:/,$port_name,2;
+	if (!$por) { $por = 0; } else { $por = 0+$por; }
+	my $cli_length = length $cli;
+	if (! $cli) { return (); }
+	my @all = listclients();
+	while (@all) {
+		my $num = shift @all;  my $name = shift @all;
+		if (! $name) { return (); }
+		if ($cli eq substr $name,$[,$cli_length) { return ($num, $por); }
+	}
+	return ();
 }
 sub connectfrom { my ($myport, $src_client, $src_port) = @_;
+	if (! defined $src_client) { return undef; }   # 1.18
 	if ($src_client =~ /[A-Za-z]/ || !defined $src_port) { # 1.03 ?
 		($src_client, $src_port) = parse_address("$src_client"); # 1.11
 		if (! defined $src_client) { return undef; }   # 1.15
@@ -139,6 +157,7 @@ sub connectfrom { my ($myport, $src_client, $src_port) = @_;
     return &xs_connectfrom($myport, $src_client, $src_port || 0);
 }
 sub connectto { my ($myport, $dest_client, $dest_port) = @_;
+	if (! defined $dest_client) { return undef; }  # 1.18
 	if ($dest_client =~ /[A-Za-z]/ || !defined $dest_port) { # 1.03 ?
 		# http://alsa-project.org/alsa-doc/alsa-lib/group___seq_middle.html
 		($dest_client, $dest_port) = parse_address("$dest_client"); # 1.11
@@ -147,6 +166,7 @@ sub connectto { my ($myport, $dest_client, $dest_port) = @_;
     return &xs_connectto($myport, $dest_client, $dest_port || 0);
 }
 sub disconnectfrom { my ($myport, $src_client, $src_port) = @_;
+	if (! defined $src_client) { return undef; }   # 1.18
 	if ($src_client =~ /[A-Za-z]/ || !defined $src_port) { # 1.03 ?
 		($src_client, $src_port) = parse_address("$src_client"); # 1.11
 		if (! defined $src_client) { return undef; }   # 1.15
@@ -154,6 +174,7 @@ sub disconnectfrom { my ($myport, $src_client, $src_port) = @_;
     return &xs_disconnectfrom($myport, $src_client, $src_port || 0);
 }
 sub disconnectto { my ($myport, $dest_client, $dest_port) = @_;
+	if (! defined $dest_client) { return undef; }  # 1.18
 	if ($dest_client =~ /[A-Za-z]/ || !defined $dest_port) { # 1.03 ?
 		($dest_client, $dest_port) = parse_address("$dest_client"); # 1.11
 		if (! defined $dest_client) { return undef; }   # 1.15
@@ -247,15 +268,27 @@ sub noteevent { my ($ch,$key,$vel,$start,$duration ) = @_;
 		0, $qid, $start, [ 0,0 ], [ 0,0 ], [ $ch,$key,$vel,$vel,$duration ] );
 		# [$ch,$key,$vel, $vel, int(0.5 + 1000*$duration) ] ); pre-1.15
 }
-sub noteonevent { my ($ch,$key,$vel ) = @_;
-	return ( SND_SEQ_EVENT_NOTEON, SND_SEQ_TIME_STAMP_REAL,
-		0, SND_SEQ_QUEUE_DIRECT, 0,
-		[ 0,0 ], [ 0,0 ], [$ch,$key,$vel, 0, 0 ] );
+sub noteonevent { my ($ch,$key,$vel, $start) = @_;
+	if (! defined $start) {
+		return ( SND_SEQ_EVENT_NOTEON, SND_SEQ_TIME_STAMP_REAL,
+			0, SND_SEQ_QUEUE_DIRECT, 0,
+			[ 0,0 ], [ 0,0 ], [$ch,$key,$vel, 0, 0 ] );
+	} else {   # 1.18
+		my $qid = &xs_queue_id();
+		return ( SND_SEQ_EVENT_NOTEON, SND_SEQ_TIME_STAMP_REAL,
+			0, 0+$qid, $start, [ 0,0 ], [ 0,0 ], [$ch,$key,$vel, 0, 0 ] );
+	}
 }
-sub noteoffevent { my ($ch,$key,$vel ) = @_;
-	return ( SND_SEQ_EVENT_NOTEOFF, SND_SEQ_TIME_STAMP_REAL,
-		0, SND_SEQ_QUEUE_DIRECT, 0,
-		[ 0,0 ], [ 0,0 ], [$ch,$key,$vel, $vel, 0 ] );
+sub noteoffevent { my ($ch,$key,$vel, $start) = @_;
+	if (! defined $start) {
+		return ( SND_SEQ_EVENT_NOTEOFF, SND_SEQ_TIME_STAMP_REAL,
+			0, SND_SEQ_QUEUE_DIRECT, 0,
+			[ 0,0 ], [ 0,0 ], [$ch,$key,$vel, $vel, 0 ] );
+	} else {   # 1.18
+		my $qid = &xs_queue_id();
+		return ( SND_SEQ_EVENT_NOTEOFF, SND_SEQ_TIME_STAMP_REAL,
+			0, 0+$qid, $start, [ 0,0 ], [ 0,0 ], [$ch,$key,$vel, $vel, 0 ] );
+	}
 }
 sub pgmchangeevent { my ($ch,$value,$start ) = @_;
 	# If start is not provided, the event will be sent directly.
@@ -749,17 +782,24 @@ Returns an ALSA-event-array, to be scheduled by I<output>().
 Unlike in the I<alsaseq.py> Python module,
 the I<start> and I<duration> elements are in floating-point seconds.
 
-=item noteonevent( $ch, $key, $vel )
+=item noteonevent( $ch, $key, $vel, $start )
 
-Returns an ALSA-event-array to be sent directly with I<output>().
+If I<start> is not used, the event will be sent directly.
+Unlike in the I<alsaseq.py> Python module.
+if I<start> is provided, the event will be scheduled in a queue. 
+The I<start> element, when provided, is in floating-point seconds.
 
-=item noteoffevent( $ch, $key, $vel )
+=item noteoffevent( $ch, $key, $vel, $start )
 
-Returns an ALSA-event-array to be sent directly with I<output>().
+If I<start> is not used, the event will be sent directly.
+Unlike in the I<alsaseq.py> Python module,
+if I<start> is provided, the event will be scheduled in a queue. 
+The I<start> element, when provided, is in floating-point seconds.
 
 =item pgmchangeevent( $ch, $value, $start )
 
-Returns an ALSA-event-array to be sent by I<output>().
+Returns an ALSA-event-array for a I<patch_change> event
+to be sent by I<output>().
 If I<start> is not used, the event will be sent directly;
 if I<start> is provided, the event will be scheduled in a queue. 
 Unlike in the I<alsaseq.py> Python module,
@@ -880,6 +920,7 @@ case-sensitive match to the given name.
 parse_address() is called automatically by I<connectto>(),
 I<connectfrom>(), I<disconnectto>() and I<disconnectfrom>() if they are
 called with the third argument undefined.
+
 parse_address() was introduced in version 1.11 and is not present in
 the alsaseq.py Python module.
 

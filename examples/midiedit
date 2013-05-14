@@ -28,8 +28,8 @@
 
 use Time::HiRes;  # 5.3
 
-my $Version = '5.4';  # replay_setup outputs bankchange before the patchchange
-my $VersionDate = '28oct2012';
+my $Version = '6.0'; # display_events remembers the Ped/* state by channel
+my $VersionDate = '20130404';
 my $UseCurses = 1;
 my $TopKeystrokesLine;   # set by display_keystrokes
 my $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'};
@@ -266,15 +266,27 @@ sub addl { my ($lin,$col,$str) = @_;
 sub add_to_history {
 	#debug("add_to_h1: Ihistory=$Ihistory #History=$#History History=@History");
 	my @copy_track = deepcopy(@Track);
-	if ($Ihistory > $[+1) {
-		$#History = $Ihistory;  # truncate History here
-	} else {
-		$Ihistory = -1;
+	# should check that 1+Ihistory is a multiple of 3
+	if ((1+$Ihistory) % 3) {
+	  _warn("add_to_history: Ihistory should be 3*n - 1, not $Ihistory");
+		#debug("add_to_history: Ihistory should be 3*n - 1, not $Ihistory");
+		$Ihistory -= ((1+$Ihistory)%3);
+		if ($Ihistory < 0) { $Ihistory = -1; }
 	}
-	push @History, \@copy_track, $Ievent, $Now;  # hardly space-efficient...
+	if ((scalar @History) % 3) {
+		_warn("add_to_history: History should be multiple of 3, not "
+		  .scalar @History);
+		#debug("add_to_history: History should be multiple of 3, not ".scalar @History);
+		# $#History -= ($#History%3);
+		# if ($Ihistory < 0) { $Ihistory = 0; }
+	}
+	if ($#History > $Ihistory) {
+		$#History = $Ihistory;  # truncate History here
+	}
+	push @History, \@copy_track, $Ievent, $Now;  # hardly space-efficient :-(
 	$Ihistory = $#History;
 	$FileIsChanged = 1;
-	#debug("add_to_h2: Ihistory=$Ihistory #History=$#History History=@History");
+	#debug("add_to_h2: Ihistory=$Ihistory History=$#History History=@History");
 }
 sub all_sounds_off {   # 2.2
 	# we could keep track of the channels which have been sent notes so far...
@@ -363,8 +375,8 @@ sub delta_t { my $ie = $_[$[];
 
 sub display_events {
 	my ($i_top, $i_now, $i_bot) = row_nums();
-	my $seen_a_ped = 0;
-	my $seen_a_endped = 0;
+	my %seen_a_ped = ();  # 6.0 remember by channel
+	my %seen_a_endped = ();
 	my $note_str = '';
 	my $iline=$i_now-1; while ($iline >= $i_top) {
 		# go upwards to show the most recent Ped and * only; more elegant
@@ -383,13 +395,14 @@ sub display_events {
 				}
 			}
 		} elsif ($Track[$now][$[] =~ /control_change/) {
+			my $cha = $Track[$now][$[+2];
 			if ($Track[$now][$[+3] == 64) {
 				if ($Track[$now][$[+4] >= 64) {
-			 		if (! $seen_a_ped) { addl($iline, 57, 'Ped'); }
-					$seen_a_ped = 1;
+			 		if (! $seen_a_ped{$cha}) { addl($iline, 57, 'Ped'); } # 6.0
+					$seen_a_ped{$cha} = 1;
 				} else {
-			 		if (! $seen_a_endped) { addl($iline, 57, '*'); }
-					$seen_a_endped = 1;
+			 		if (! $seen_a_endped{$cha}) { addl($iline, 57, '*'); } # 6.0
+					$seen_a_endped{$cha} = 1;
 				}
 			}
 		} elsif ($Track[$now][$[] =~ /^sysex/) {
@@ -465,13 +478,13 @@ sub display_fields {   # 4.4
 		addl(0,5,"now editing $f");
 		attrset(A_NORMAL());
 	} elsif ($event_type eq 'note') {
-		addl(0,5,'     Event  Ticks  Dura  Chan  Note   Vol');
+		addl(0,5,'       Event  Ticks  Dura  Chan  Pitch  Vol');
 	} elsif ($event_type eq 'control_change') {
-		addl(0,5,'     Event  Ticks  Chan  Contrlr Value');
+		addl(0,5,'       Event  Ticks  Chan  Contrlr Value');
 	} elsif ($event_type eq 'patch_change') {
-		addl(0,5,'     Event  Ticks  Chan  Patch');
+		addl(0,5,'       Event  Ticks  Chan  Patch');
 	} else {
-		addl(0,5,'     Event  Ticks  Data');
+		addl(0,5,'       Event  Ticks  Data');
 	}
 	move(0,$COLS-length($ID)-24); addstr("ReplaySpeed=$RS");  # 3.1
 	move(0,$COLS-length($ID)-8);  addstr("Output=$ID");
@@ -962,7 +975,7 @@ sub find {
 		clrtobot(); refresh();
 		my $str; my $n;
 		echo(); $n = getnstr($str,50); noecho();
-		$FindEvent[$[+2] = $str;
+		if ($str) { $FindEvent[$[+2] = $str; }   # 5.9
 	} else {
 		return;
 	}
@@ -1200,6 +1213,7 @@ sub edit_again {
 		}
 	}
 	$Track[$Ievent] = \@event;
+	add_to_history();
 }
 
 sub new_file {
@@ -1359,10 +1373,14 @@ sub range_delete {   # 4.5  should defend against $RangeEnd == $#Track
 	my $n_deleted = $RangeEnd-$RangeStart+1;
 	splice @Track, $RangeStart, $n_deleted;
 	$Message = "$n_deleted events deleted";
-	$RangeEnd = $[-1;
 	my $k = $RangeStart;
 	while ($k <= $#Track) { $Track[$k][$[+1] -= $delta; $k += 1; }
-	if ($Ievent > $#Track) { $Ievent = $#Track; }   # 4.7
+	if      ($Ievent > $#Track)     { $Ievent = $#Track;   # 4.7
+	} elsif ($Ievent > $RangeEnd)   { $Ievent -= $n_deleted;  # 5.6
+	} elsif ($Ievent > $RangeStart) { $Ievent = $RangeStart;  # 5.6
+	}
+	time_travel($Track[$Ievent][$[+1] - $Now);   # 5.6
+	$RangeEnd = $[-1;
 	add_to_history();
 }
 
@@ -1454,9 +1472,8 @@ sub range_quantise { my $quantum = $_[$[];  # 4.5; borrowed from midisox_pl
 		if ($Track[$k][$[] eq 'note') {
 			my $old_this_note_time = $Track[$k][$[+1];
 			my $dt = $old_this_note_time - $old_previous_note_time;
-			# quantum must not be zero
-			$Track[$k][$[+1] = $new_previous_note_time
-			  + $quantum * round($dt/$quantum);
+			my $dn = round($dt/$quantum);   # quantum must not be zero
+			$Track[$k][$[+1] = $new_previous_note_time + $quantum*$dn;
 			my $new_this_note_time = $Track[$k][$[+1];
 			# readjust non-note events to lie between the adjusted times
 			# in the same proportion as they lay between the old times
@@ -1473,8 +1490,10 @@ sub range_quantise { my $quantum = $_[$[];  # 4.5; borrowed from midisox_pl
 				}
 				$k2 = $k2 - 1;
 			}
-			$old_previous_note_time = $old_this_note_time;
-			$new_previous_note_time = $new_this_note_time;
+			if ($dn > 0) {   # 5.8, see midisox* versions 5.4
+				$old_previous_note_time = $old_this_note_time;
+				$new_previous_note_time = $new_this_note_time;
+			}
 		}
 		$k += 1;
 	}
@@ -1494,6 +1513,7 @@ sub range_repeat {  my $times = round($_[$[]);
 	my $r_end = $RangeEnd; if ($RangeEnd == $#Track) { $r_end = $RangeEnd-1; }
 	my $delta = $Track[$r_end+1][$[+1] - $Track[$RangeStart][$[+1];
 	my $n_in_range = $r_end-$RangeStart+1;
+debug("r_end=$r_end delta=$delta n_in_range=$n_in_range");
 	my $k = $r_end;
 	foreach my $time (2 .. $times) {
 		splice @Track, $k+1, 0, deepcopy(@Track[$RangeStart..$r_end]);
@@ -1507,7 +1527,13 @@ sub range_repeat {  my $times = round($_[$[]);
 		$Track[$k][$[+1] += $delta*($times-1);
 		$k += 1;
 	}
-	$Message = sprintf("%d new events, ", $n_in_range*($times-1));
+	# 5.7 move cursor, if it lay after RangeEnd (see range_delete 5.6)
+	if ($Ievent > $RangeEnd)   {   # 5.7
+		my $t = ($times-1)*$delta;
+		# debug("times=$times delta=$delta t=$t");
+		time_travel(($times-1)*$delta);
+	}
+	$Message = sprintf("%d new events", $n_in_range*($times-1));
 	add_to_history();
 }
 
@@ -1581,8 +1607,11 @@ sub range_write {   my $filename = $_[$[];   # 4.6
 
 sub re_do {
 	#debug("re_do1: Ihistory=$Ihistory #History=$#History History=@History");
-	if ($Ihistory > $#History-2) {$Message="Already at newest change"; return;}
+	if ($Ihistory > ($#History-3)) {
+		$Message="Already at newest change"; return;
+	}
 	$Ihistory += 1; my $r = $History[$Ihistory];
+	if (ref $r ne ARRAY) { $Message="ref r was ".ref $r; }
 	@Track = deepcopy(@$r);
 	$Ihistory += 1; $Ievent = $History[$Ihistory];
 	$Ihistory += 1; $Now    = $History[$Ihistory];
@@ -1682,13 +1711,13 @@ sub event_travel { my $di = $_[$[];   # 5.2
 
 sub un_do {
 	#debug("un_do1: Ihistory=$Ihistory #History=$#History History=@History");
-	if ($Ihistory < $[+5) { $Message = "Already at oldest change"; return; }
+	if ($Ihistory < $[+3) { $Message = "Already at oldest change"; return; }
 	$Ihistory -= 3;
-	$Now    = $History[$Ihistory]; $Ihistory -= 1;
-	$Ievent = $History[$Ihistory]; $Ihistory -= 1;
-	my $r   = $History[$Ihistory]; $Ihistory += 2;
+	$Now    = $History[$Ihistory];
+	$Ievent = $History[$Ihistory-1];
+	my $r   = $History[$Ihistory-2];
 	@Track = deepcopy(@$r);
-	#debug("un_do2: Ihistory=$Ihistory #History=$#History History=@History");
+	#debug("un_do2: Now=$Now Ieven=$Ievent Ihistory=$Ihistory #History=$#History History=@History");
 }
 
 #------------ MIDI infrastructure from midisox_pl ------------
@@ -2020,7 +2049,8 @@ B<w>=write B<q>=quit
 B<.>=last_edit_again,
 plus a few others, e.g.:
 B<e>=edit_event, B<D>=delete_event,
-B<R>=define_a_range, B<r>=operate_on_that_range, B<z>=all_sounds_off
+B<R>=define_a_range, B<r>=operate_on_that_range,
+B<f>=file_operations, and B<z>=all_sounds_off
 
 As in I<mplayer>, the spacebar toggles between Play and Pause,
 the Left and Right arrow keys move by 1 second,
@@ -2051,7 +2081,6 @@ Since version 3.0, B</>=find allows search criteria such as
 which, when combined with B<.>=last_edit_again
 make it easier to do things like
 "move that high bit of the piano solo into a different channel".
-Since version 4.0, also B<f> can be used to mean I<find>.
 
 Since version 4.5, a I<Range> can be defined by pressing upper-case B<R>
 once at each end of the desired range.
@@ -2059,11 +2088,11 @@ Once defined, the I<Range> can be operated on, using a lower-case B<r>,
 in various ways
 ( B<c>=compand B<d>=delete B<f>=fade B<m>=mixer B<p>=pitch
 B<q>=quantise B<r>=repeat B<t>=tempo B<v>=vol B<w>=write_to_file )
-largely modelled on the corresponding I<midisox> effects.  For example, see :
+largely modelled on the corresponding I<midisox> effects.
+For details of what the I<compand> effect does, see:
  midisox --help-effect=compand
 
-for details of what the I<compand> effect does.
-B<f>=fade and B<w>=write_to_file are currently unimplemented.
+B<f>=fade is currently unimplemented.
 
 This user-interface is likely to evolve over the next months,
 as I use it more.
@@ -2104,18 +2133,24 @@ so you have to keep track of matching note_ons and note_offs.
 
 =head1 CHANGES
 
+ 6.0, 20130404, display_events remembers the Ped/* state by channel
+ 5.9, 20130323, find_marker with null text finds the next marker
+ 5.8, 20130321, bug fixed in range_quantise effect
+ 5.7, 20130302, range_repeat moves cursor down if it lay after RangeEnd
+ 5.6, 20130301, range_delete moves cursor up if it lay after RangeEnd
+ 5.5, 20130218, u=undo and ^R=redo seem to work
  5.4, 20121028, replay_setup outputs bankchange before the patchchange
- 5.3, 20121001, replay_setup (hence time_travel) works forwards and backwards
+ 5.3, 20121001, replay_setup (hence time_travel) works for- and backward
  5.2, 20120930, KEY_UP uses event_travel() to cope with dt=0
  5.1, 20120930, works with MIDI::ALSA 1.15; PolyOn=127 fixed
  5.0, 20120916, edit_event uses p=pitch not n=note
  4.9, 20120910, f=file_menu: f=fork n=new s=save q=quit
  4.8, 20120908, KEY_UP uses time_travel(), so as to get the right patch
- 4.7, 20120903, display_events clears lines after EOF; needed by range_delete
+ 4.7, 20120903, display_events clears lines after EOF, range_delete
  4.6, 20120628, rw = range_write now works
  4.5, 20120624, R and r range-operations largely work
  4.4, 20120613, event-fields correctly displayed also in edit-mode
- 4.3, 20120612, more consistent redo and undo; find_event uses time_travel
+ 4.3, 20120612, consistent redo and undo; find_event uses time_travel
  4.2, 20120609, can search for long gaps or short gaps
  4.1, 20120608, becomes Paused at EOF; channel,note in bold if note-on
  4.0, 20120604, j,k keys also available in Edit Mode

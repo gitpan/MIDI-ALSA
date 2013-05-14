@@ -18,8 +18,8 @@ eval 'require Term::Clui'; if ($@) { die
 	"you'll need to install the Term::Clui module from www.cpan.org\n";
 }
 my $CurrentX; my $CurrentY;
-my $Version      = '5.3';   # the Y-contoller works correctly
-my $VersionDate  = '07apr2012';
+my $Version      = '5.4';   # -o 0 doesn't connect to anything
+my $VersionDate  = '25feb2013';
 my $Channel   = 0;
 my $Volume    = 100;
 my $Pan       = 64;
@@ -60,7 +60,6 @@ while ($ARGV[$[] =~ /^-([CPa-z])([adhpw]?)/) {
 		print "$n version $Version $VersionDate\n";
 		exit 0;
 	} elsif ($opt eq 'd' or $opt eq 'o') { shift; $OutputPort = shift;
-		# if ($f =~ /^\d+(:\d+)(,\d+(:\d)?)?$/)  { $OutputPort = $f; }
 	} elsif ($opt eq 'p') { shift; $OutputPort = shift;
 	} elsif ($opt eq 'C') { shift;
 		warn "warning: -C option is now deprecated; see perldoc midikbd\n";
@@ -107,18 +106,16 @@ while (<DATA>) {
 my %Char2note = char2note($KeyMap);
 
 MIDI::ALSA::client( "midikbd pid=$$", 0, 1, 0 );
-if (!$OutputPort) { $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'}; }
-if (!$OutputPort) {
-	warn "OutputPort not specified and ALSA_OUTPUT_PORTS not set\n";
-}
-foreach my $cl_po (split /,/, $OutputPort) {  # 5.0
-	#$cl_po =~ /^(\d+):?(\d*)$/;
-	#my $cl = $1; my $po = $2 or 0;
-	#if ($cl == MIDI::ALSA::id()) {
-	#	die "can't connect to $cl_po, which is myself\n";
-	#}
-	if (! MIDI::ALSA::connectto( 0, $cl_po )) {
-		die "can't connect to ALSA client $cl_po\n";
+
+if ($OutputPort ne '0') {   # 5.4
+	if (!$OutputPort) { $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'}; }
+	if (!$OutputPort) {
+		warn "OutputPort not specified and ALSA_OUTPUT_PORTS not set\n";
+	}
+	foreach my $cl_po (split /,/, $OutputPort) {  # 5.0
+		if (! MIDI::ALSA::connectto( 0, $cl_po )) {
+			die "can't connect to ALSA client $cl_po\n";
+		}
 	}
 }
 
@@ -756,28 +753,34 @@ port specified by the I<ALSA_OUTPUT_PORTS> environment variable.
 
 =over 3
 
-=item I<-o 128:0>
+=item I<-o 128:0> or I<-o TiMidity>
 
-This example plays into the ALSA B<p>ort I<128:0>.
+This example plays into the ALSA B<p>ort I<128:0>,
+or into the I<TiMidity> client..
 It does this by using the I<MIDI::ALSA> Perl CPAN module.
-When I<midikbd> exits it automatically deletes the connection
-(because, for example, as long as a I<timidity> port is connected to,
-then I<timidity> locks up the sound card for its own use).
+When I<midikbd> exits the connection is automatically deleted.
 
 This option allows I<midikbd> to use the same port-specification
 as the other alsa-utils, e.g. I<aplaymidi> and I<aconnect>.
 An ALSA-port is specified by its number; for port 0 of a client,
 the ":0" part of the port specification can be omitted.
-The port specification is taken
-from the ALSA_OUTPUT_PORTS environment variable if none is given
-on the command line.
+The output port is taken from the I<ALSA_OUTPUT_PORTS>
+environment variable if none is given on the command line.
 
-If you want the output to go into another program like I<midiecho>,
-you can go through a MIDI-Through client. In separate I<xterm>s:
-  midiecho -i 14 -d 250,450 -s 45 -e 1,2
+Since Version 5.0,
+you may supply a comma-separated list of ports, e.g. I<-o 20,128:1>
 
-and
-  midikbd -o 14
+Since Version 5.4,
+the particular port value zero e.g. I<-o 0> is taken
+as an instruction to not connect to anything at all.
+This is useful if you want the output to go into another program like
+I<midiecho> or I<midichord>;
+you no longer have to go through a MIDI-Through client.
+In separate I<xterm>s:
+  midikbd -o 0
+
+and then
+  midiecho -i midikbd -c 0 -d 250,450 -s 45 -e 1,2
 
 =item I<-ka> or I<-kd> or I<-kh> or I<-kp> or I<-kw>
 
@@ -864,15 +867,13 @@ The second example sets up I<Channel:Patch:Pan> on a number of channels,
 and leaves I<midikbd> playing on the last channel mentioned.
 A list of General-MIDI Patch-numbers is at
 http://www.pjb.com.au/muscript/gm.html#patch
-E.g. (assuming ALSA-client 14 is a Midi-Through,
-see I<aconnect -oil>),
 in separate xterm's:
 
-  midikbd -o 14 5:91:120 4:14:120 3:91:8 2:14:8 1:29:64 0:14:64 &
+  midikbd -o 0 5:91:120 4:14:120 3:91:8 2:14:8 1:29:64 0:14:64 &
 
 and
 
-  midiecho -i 14 -d 1,2200,2201,4400,4401 -q 5 -e 1,2,3,4,5
+  midiecho -i midikbd -d 1,2200,2201,4400,4401 -q 5 -e 1,2,3,4,5
 
 B< 3:91:y0 2:92:y-0 1:93:x-10 0:94:x10>
 
@@ -930,17 +931,18 @@ This option is superseded by the I<ChannelSpec> arguments.
 
 =head1 CHANGES
 
+ 20130225  5.4  -o 0 doesn't connect to anything
  20120407  5.3  the Y-controller works correctly
- 20120401  5.2  changing the X- or Y-contoller is displayed correctly
+ 20120401  5.2  changing the X- or Y-controller is displayed correctly
  20111103  5.1  use the new MIDI-ALSA 1.11 to handle portnames
  20111028  5.0  OutputPort can be a comma-separated list
  20110917  4.9  Pan controlled by mouse is not falsely displayed
  20110620  4.8  drumkit offers z,x = metronome
  20110509  4.7  quit from drumkit mode cleans up screen properly
  20110414  4.6  keystroke A changes ALSA connections
- 20110321  4.5  now uses MIDI::ALSA, not aconnect and writing to /dev/snd/midi*
+ 20110321  4.5  now uses MIDI::ALSA, not writing to /dev/snd/midi*
  20101213  4.4  display more compact; Controllers now displayed
- 20101117  4.3  keystrokes X and Y map X and Y mouse movements at run-time
+ 20101117  4.3  keystrokes X and Y map X and Y mouse at run-time
  20101017  4.2  keystroke M sets MIDI-Controller
  20101017  4.2  AutoPan is cancelled by Pan, but still unimplemented
  20100819  4.1  CursorRow set correctly for drumkit keymap

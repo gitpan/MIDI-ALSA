@@ -1,3 +1,5 @@
+20130514 1.18 parse_address matches startofstring to cover alsa-lib 1.0.24 bug
+20130211      noteonevent and noteoffevent accept a $start parameter
 20121208 1.17 test.pl handles alsa_1.0.16 quirk
 20121129 1.16 test.pl prints better diagnostics if it fails
 20120930 1.15 output() timestamp and duration in floating-point seconds

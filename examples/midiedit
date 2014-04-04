@@ -26,6 +26,17 @@
 # File/Save (="w"),
 # File/Quit (="q")
 
+# 20140303
+# midiedit should display pitches mapped left-to-right like a miniature piano
+#   C ab | Eb
+#   C    | Eb f~
+#        | Eb b f~
+# If possible at least 3 characters per octave, plus '| ' unmoving;
+# bass is 3.3 octaves, treble 4 octaves = 22 chars; plus '| ' makes 24
+# If less than 15 are available, revert to 'treble f~##' which uses 11.
+# Could also display the sounding chord, eg 'c233' or 'eb26'
+# see  sub note2str !
+
 use Time::HiRes;  # 5.3
 
 my $Version = '6.0'; # display_events remembers the Ped/* state by channel
@@ -1160,6 +1171,15 @@ sub note2str { my ($s,$t,$dt,$cha,$note,$vol) = @_;
 		return '';
 	}
 	if (0+$cha == 9) { return $MIDI::notenum2percussion{$note}; }
+# XXX By default, midiedit should display pitches
+# mapped left-to-right like a miniature piano:
+#   C ab | Eb
+#   C    | Eb f~
+#        | Eb b f~
+# If possible at least 3 characters per octave, plus '| ' unmoving;
+# bass is 3.3 octaves, treble 4 octaves = 22 chars; plus '| ' makes 24
+# If less than 15 are available, revert to 'treble f~##' which uses 11.
+# Could also display the sounding chord, eg 'c233' or 'eb26' or 'Eb F B'
 	my $clef = 'bass'; if ($note >= 60) { $clef = 'treble'; $note -= 24; }
 	my $octave = '';
 	if ($note < 36) {
@@ -1513,7 +1533,7 @@ sub range_repeat {  my $times = round($_[$[]);
 	my $r_end = $RangeEnd; if ($RangeEnd == $#Track) { $r_end = $RangeEnd-1; }
 	my $delta = $Track[$r_end+1][$[+1] - $Track[$RangeStart][$[+1];
 	my $n_in_range = $r_end-$RangeStart+1;
-debug("r_end=$r_end delta=$delta n_in_range=$n_in_range");
+	# debug("r_end=$r_end delta=$delta n_in_range=$n_in_range");
 	my $k = $r_end;
 	foreach my $time (2 .. $times) {
 		splice @Track, $k+1, 0, deepcopy(@Track[$RangeStart..$r_end]);

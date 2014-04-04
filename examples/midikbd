@@ -105,7 +105,8 @@ while (<DATA>) {
 }
 my %Char2note = char2note($KeyMap);
 
-MIDI::ALSA::client( "midikbd pid=$$", 0, 1, 0 );
+# MIDI::ALSA::client( "midikbd pid=$$", 0, 1, 0 );
+MIDI::ALSA::client( "midikbd", 0, 1, 0 );   # workaraound for alsa-lib 1.0.24
 
 if ($OutputPort ne '0') {   # 5.4
 	if (!$OutputPort) { $OutputPort = $ENV{'ALSA_OUTPUT_PORTS'}; }

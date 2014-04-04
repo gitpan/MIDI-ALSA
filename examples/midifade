@@ -7,10 +7,36 @@
 #            modify it under the same terms as Perl itself.             #
 #########################################################################
 # see 20111002    midislide ?
-# 6 cols per fader   ordered by channel then by midicontroller
-# If tight, could drop the command and go to 5 chars wide ?
-# On exit, could print the equivalent muscript, or Perl,Python,or Lua ?
+# 20140306 seconded ! : for pitch-adjusting the midi
+#   when there are midi files and audio-files
+#   so that the synth can be tuned by hand to an arbitrary wav file
+# could simply offer pitchbend as a alternative to cc=?
+#   perhaps just the letter "p" instead of the cc number !
+# Or, should always apply to all channels ? This will be the common case...
+#
+# Also: an audiofile-mixer option, which starts up a suitable ecasound
+# and offers vol,pan,filter on each audiofile !
+#   midifade -audio v,p gtr.wav v,f,q str.wav v brass.wav backing.wav
+
+# and could record its fadermovements in a midi file
+#   which (or several of which) can be replayed behind subsequent passes
+#   should contain a comment on which vpfq and which audiofile,
+#     so the ecasound commands can be reconstructed.
+#   midifade -audio -replay mix0.mid,mix1.mid v,p,f,q vocal.wav final.wav
+#     those midifiles should automatically replay their audio-file.
+# However the whole mechanism only redoes what can be done by producing
+#   a mixed-down .wav, and then using that as subsequent audio input.
+# Therefore forget the -replay option and the custom midi-comments.
+
+
 # Curses interface from midiedit, midi stuff from midikbd.
+# On exit, could print the equivalent muscript, or Perl,Python,or Lua ?
+# 20130814: midifade could conceiveably take an a=auto for the value,
+#   asking somehow for min, max, period, perhaps sin/tri/sawup/sawdown, and
+#   then behave like panfarm on MIDI::ALSA. Probably need a child process...
+# 20130815: Also, then what would the Up/Down/PgUp/PgDown/Home/End keys do ?
+#   or, instead of n=new, perhaps w=wahwah and p=pan ?  74 wants also 71
+#   should this be in our hypothetical midihub? Only really applies to 11,74
 
 my $Version      = '1.8';
 my $VersionDate  = '23mar2013';
@@ -326,6 +352,8 @@ sub display_message {
 }
 
 sub new_fader_dialogue {
+	# Could introduce value=A meaning Auto like panfarm
+	# and then ask for min, max, period, perhaps sin/tri/sawup/sawdown
 	addl($LINES-3,2,'        Channel (0..15)  ?');
 	addl($LINES-2,2,'MIDI-Controller (0..127) ?');
 	addl($LINES-1,2,'          Value (0..127) ?');

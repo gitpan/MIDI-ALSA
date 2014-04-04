@@ -11,7 +11,8 @@ package MIDI::ALSA;
 no strict;
 use bytes;
 # this gives a -w warning, but $VERSION.='' confuses CPAN:
-$VERSION = '1.18';
+$VERSION = '1.19';
+# 20140404 1.19 CONSTS exported as advertised
 # 20130514 1.18 parse_address matches startofstring to hide alsa-lib 1.0.24 bug
 # 20130211 1.18 noteonevent and noteoffevent accept a $start parameter
 # 20121208 1.17 test.pl handles alsa_1.0.16 quirk
@@ -40,8 +41,33 @@ require DynaLoader;
  input inputpending output start status stop syncoutput noteevent
  noteonevent noteoffevent parse_address pgmchangeevent pitchbendevent
  controllerevent chanpress alsa2scoreevent scoreevent2alsa);
-@EXPORT_CONSTS = ();
-%EXPORT_TAGS = (ALL => [@EXPORT,@EXPORT_OK], CONSTS => [@EXPORT_CONSTS]);
+@EXPORT_CONSTS = qw(SND_SEQ_EVENT_BOUNCE SND_SEQ_EVENT_CHANPRESS
+ SND_SEQ_EVENT_CLIENT_CHANGE SND_SEQ_EVENT_CLIENT_EXIT
+ SND_SEQ_EVENT_CLIENT_START SND_SEQ_EVENT_CLOCK SND_SEQ_EVENT_CONTINUE
+ SND_SEQ_EVENT_CONTROL14 SND_SEQ_EVENT_CONTROLLER SND_SEQ_EVENT_ECHO
+ SND_SEQ_EVENT_KEYPRESS SND_SEQ_EVENT_KEYSIGN SND_SEQ_EVENT_NONE
+ SND_SEQ_EVENT_NONREGPARAM SND_SEQ_EVENT_NOTE SND_SEQ_EVENT_NOTEOFF
+ SND_SEQ_EVENT_NOTEON SND_SEQ_EVENT_OSS SND_SEQ_EVENT_PGMCHANGE
+ SND_SEQ_EVENT_PITCHBEND SND_SEQ_EVENT_PORT_CHANGE SND_SEQ_EVENT_PORT_EXIT
+ SND_SEQ_EVENT_PORT_START SND_SEQ_EVENT_PORT_SUBSCRIBED
+ SND_SEQ_EVENT_PORT_UNSUBSCRIBED SND_SEQ_EVENT_QFRAME
+ SND_SEQ_EVENT_QUEUE_SKEW SND_SEQ_EVENT_REGPARAM SND_SEQ_EVENT_RESET
+ SND_SEQ_EVENT_RESULT SND_SEQ_EVENT_SENSING SND_SEQ_EVENT_SETPOS_TICK
+ SND_SEQ_EVENT_SETPOS_TIME SND_SEQ_EVENT_SONGPOS SND_SEQ_EVENT_SONGSEL
+ SND_SEQ_EVENT_START SND_SEQ_EVENT_STOP SND_SEQ_EVENT_SYNC_POS
+ SND_SEQ_EVENT_SYSEX SND_SEQ_EVENT_SYSTEM SND_SEQ_EVENT_TEMPO
+ SND_SEQ_EVENT_TICK SND_SEQ_EVENT_TIMESIGN SND_SEQ_EVENT_TUNE_REQUEST
+ SND_SEQ_EVENT_USR0 SND_SEQ_EVENT_USR1 SND_SEQ_EVENT_USR2
+ SND_SEQ_EVENT_USR3 SND_SEQ_EVENT_USR4 SND_SEQ_EVENT_USR5
+ SND_SEQ_EVENT_USR6 SND_SEQ_EVENT_USR7 SND_SEQ_EVENT_USR8
+ SND_SEQ_EVENT_USR9 SND_SEQ_EVENT_USR_VAR0 SND_SEQ_EVENT_USR_VAR1
+ SND_SEQ_EVENT_USR_VAR2 SND_SEQ_EVENT_USR_VAR3 SND_SEQ_EVENT_USR_VAR4
+ SND_SEQ_QUEUE_DIRECT SND_SEQ_TIME_STAMP_REAL);   # 1.19
+
+%EXPORT_TAGS = (
+	ALL    => [@EXPORT,@EXPORT_OK,@EXPORT_CONSTS],
+	CONSTS => [@EXPORT_CONSTS]
+);
 bootstrap MIDI::ALSA $VERSION;
 
 my $maximum_nports = 64;   # 1.09
@@ -185,7 +211,7 @@ sub fd {
     return &xs_fd();
 }
 sub id {
-    return &xs_id();
+    return 0 + &xs_id(); # 1.19
 }
 sub input {
     my @ev = &xs_input();
@@ -244,7 +270,7 @@ sub output { my @ev = @_;
 }
 sub queue_id {
 	my $rc = &xs_queue_id();
-	return $rc;
+	return 0+$rc;  # 1.19
 }
 sub start {
 	my $rc = &xs_start();
@@ -528,13 +554,22 @@ MIDI::ALSA - the ALSA library, plus some interface functions
 
 =head1 SYNOPSIS
 
- use MIDI::ALSA(SND_SEQ_EVENT_PORT_UNSUBSCRIBED);
+ use MIDI::ALSA(':CONSTS');
  MIDI::ALSA::client( 'Perl MIDI::ALSA client', 1, 1, 0 );
  MIDI::ALSA::connectfrom( 0, 14, 0 );  # input port is lower (0)
  MIDI::ALSA::connectto( 1, 20, 0 );   # output port is higher (1)
  while (1) {
      my @alsaevent = MIDI::ALSA::input();
      if ($alsaevent[0] == SND_SEQ_EVENT_PORT_UNSUBSCRIBED()) { last; }
+     if ($alsaevent[0] == SND_SEQ_EVENT_NOTEON()) {
+         my $channel  = $alsaevent[7][0];
+         my $pitch    = $alsaevent[7][1];
+         my $velocity = $alsaevent[7][2];
+     } elsif ($alsaevent[0] == SND_SEQ_EVENT_CONTROLLER()) {
+         my $channel    = $alsaevent[7][0];
+         my $controller = $alsaevent[7][4];
+         my $value      = $alsaevent[7][5];
+     }
      MIDI::ALSA::output( @alsaevent );
  }
 
@@ -656,6 +691,18 @@ port 1 of the 'Virtual Raw MIDI' client.
 =item fd()
 
 Return fileno of sequencer.
+
+This piece of code, contributed by Daren Schwenke,
+uses the I<AnyEvent> module to build an application which waits
+both for ALSA events, and for user-input:
+
+   my $alsa_midi = AnyEvent->io (
+      fh => MIDI::ALSA::fd(), poll => "r",
+      cb => sub {
+         my @alsaevent = MIDI::ALSA::input();
+         print "Alsa event: " . Dumper(\@alsaevent);
+      }
+   );
 
 =item id()
 
@@ -1003,6 +1050,7 @@ Peter J Billam, http://www.pjb.com.au/comp/contact.html
  snd_seq_get_client_info
  snd_seq_client_info_t
  http://hackage.haskell.org/package/alsa-seq
+ http://search.cpan.org/perldoc?AnyEvent
 
 =cut
 

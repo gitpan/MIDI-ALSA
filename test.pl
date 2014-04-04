@@ -286,7 +286,7 @@ if (@virmidi <2) {
 $rc = MIDI::ALSA::connectto(2,"$my_name:1");
 ok($rc, "connectto(2,'$my_name:1') connected to myself by name");
 #system 'aconnect -oil';
-@correct = (11, 1, 0, 1, 2.5, [$id,2], [$id,1], [0, 0, 0, 0, 0, 99] );
+@correct = (11, 1, 0, $qid, 2.8, [$id,2], [$id,1], [0, 0, 0, 0, 0, 99] );
 $rc =  MIDI::ALSA::output(@correct);
 foreach (1..5) {  # 1.17
 	$rc =  MIDI::ALSA::inputpending();
@@ -295,7 +295,7 @@ foreach (1..5) {  # 1.17
 	my $cl = join ":", @{$alsaevent[5]};
 	warn "# discarding a SND_SEQ_EVENT_SENSING event from $cl\n";
 }
-$latency = int(0.5 + 1000 * ($alsaevent[4]-$correct[4]));
+$latency = int(0.5 + 1000000 * ($alsaevent[4]-$correct[4]));
 $alsaevent[3] = 1;   # 1.16 sometimes it's 0 ...
 $alsaevent[4] = $correct[4];
 if (! ok(Dumper(@alsaevent) eq Dumper(@correct),
@@ -303,7 +303,7 @@ if (! ok(Dumper(@alsaevent) eq Dumper(@correct),
 	print "# alsaevent=".Dumper(\@alsaevent)."\n";   # 1.16
 	print "# correct  =".Dumper(\@correct)."\n";   # 1.16
 }
-ok($latency < 20, "latency was $latency ms");
+ok($latency < 10000, "latency was $latency microsec");
 
 $rc = MIDI::ALSA::disconnectfrom(1,$id,2);
 ok($rc, "disconnectfrom(1,$id,2)");

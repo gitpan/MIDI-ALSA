@@ -557,7 +557,7 @@ q=>42,w=>42,e=>44,r=>44,t=>46,y=>46,u=>51,i=>59,o=>49,p=>57,'['=>55,']'=>53,
 		);
 	} else {
 		die "unrecognised KeyMap: $keymap\n"
-		 . " must be: piano, wholetone, harmonic or drumkit.\n";
+		 . " must be: piano, wholetone, harmonic, augmented or drumkit.\n";
 	}
 }
 

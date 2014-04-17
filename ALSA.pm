@@ -11,7 +11,8 @@ package MIDI::ALSA;
 no strict;
 use bytes;
 # this gives a -w warning, but $VERSION.='' confuses CPAN:
-$VERSION = '1.19';
+$VERSION = '1.20';
+# 20140??? 1.20 dont forget to edit Changes...
 # 20140404 1.19 CONSTS exported as advertised
 # 20130514 1.18 parse_address matches startofstring to hide alsa-lib 1.0.24 bug
 # 20130211 1.18 noteonevent and noteoffevent accept a $start parameter
@@ -731,10 +732,13 @@ not as strings, and must therefore be used without any dollar-sign e.g.:
 
  if ($event[0] == MIDI::ALSA::SND_SEQ_EVENT_PORT_UNSUBSCRIBED) { ...
 
-Note that if the event is of type SND_SEQ_EVENT_PORT_UNSUBSCRIBED
+Note that if the event is of type SND_SEQ_EVENT_PORT_SUBSCRIBED
+or SND_SEQ_EVENT_PORT_UNSUBSCRIBED,
 then that message has come from the System,
-so its I<src_client> and I<src_port> do not tell you who disconnected.
-You'll need to use I<listconnected()> to see what's happened.
+and its I<dest_port> tells you which of your ports is involved.
+But its I<src_client> and I<src_port> do not tell you which other client
+disconnected;  you'll need to use I<listconnectedfrom()>
+or I<listconnectedto()> to see what's happened.
 
 The data array is mostly as documented in
 http://alsa-project.org/alsa-doc/alsa-lib/seq.html.
@@ -1005,6 +1009,36 @@ SND_SEQ_EVENT_USR7 SND_SEQ_EVENT_USR8 SND_SEQ_EVENT_USR9
 SND_SEQ_EVENT_USR_VAR0 SND_SEQ_EVENT_USR_VAR1 SND_SEQ_EVENT_USR_VAR2
 SND_SEQ_EVENT_USR_VAR3 SND_SEQ_EVENT_USR_VAR4 SND_SEQ_QUEUE_DIRECT
 SND_SEQ_TIME_STAMP_REAL VERSION
+
+The MIDI standard specifies that a NOTEON event with velocity=0 means
+the same as a NOTEOFF event; so you may find a little subroutine like
+this convenient:
+
+ sub is_noteoff { my @alsaevent = @_;
+    if ($alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_NOTEOFF()) {
+        return 1;
+    }
+    if ($alsaevent[0] == MIDI::ALSA::SND_SEQ_EVENT_NOTEON()
+      and $alsaevent[7][2] == 0) {
+        return 1;
+    }
+    return 0;
+ }
+
+
+Since Version 1.20, the output-ports are marked as WRITE,
+so they can receive
+SND_SEQ_EVENT_PORT_SUBSCRIBED or SND_SEQ_EVENT_PORT_UNSUBSCRIBED
+events from I<System Announce>.
+Up until Version 1.19, and in the original Python module,
+output-ports created by client() were not so marked;
+in those days, if knowing about connections and disconnections to the
+output-port was important, you had to listen to all notifications from
+I<System Announce>:
+C<MIDI::ALSA::connectfrom(0,'System:1')>
+This alerted you unnecessarily to events which didn't involve your client,
+and the connection showed up confusingly
+in the output of C<aconnect -oil>
 
 =head1 DOWNLOAD
 
